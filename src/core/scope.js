@@ -14,6 +14,7 @@ import {
 import {
 	signalController, signalObserver, signalProxy, signalInstance, resolveSignal,
 } from "./signal.js";
+import scopeDom from "../scopedom.js";
 
 
 export class scopeExpressionContext {};
@@ -137,15 +138,15 @@ export class scopeController {
 		return target.dispatchEvent(new CustomEvent(name,options));
 	}
 	
-	$signal(value=void 0){ let s=this.signalCtrl.createSignal(value); return [s.get.bind(s),s.set.bind(s),s]; } // [getFn,setFn,signalInstance]
+	$signal(value=void 0){ let s=this.signalCtrl.createSignal(value); return [s.get.bind(s),s.set.bind(s),s]; }
 	
-	$createSignal(value=void 0){ return this.signalCtrl.createSignal(value); } // signalInstance
+	$createSignal(value=void 0,useWeakRef=false){ return this.signalCtrl.createSignal(value,useWeakRef); }
 	
-	$defineSignal(obj,prop,value=void 0,descriptor=null){ return this.signalCtrl.defineSignal(obj,prop,value,descriptor); } // signalInstance
+	$defineSignal(obj,prop,value=void 0,descriptor=null,useOriginal=true){ return this.signalCtrl.defineSignal(obj,prop,value,descriptor,useOriginal); }
 	
 	$assignSignals(target,source){ return this.signalCtrl.assignSignals(target,source); } // target
 	
-	$computeSignal(fn){ return this.signalCtrl.computeSignal(fn); } // [ signal, observer, clear() ]
+	$computeSignal(fn,options={}){ return this.signalCtrl.computeSignal(fn,options); } // [ signal, observer, clear() ]
 	
 	$proxySignal(value){ return this.signalCtrl.proxySignal(value); } // proxy
 	
@@ -186,8 +187,8 @@ export class scopeElementController {
 	// extraScopes [{},...] elementScopes: [[element,scopesArr],...]
 	execElementExpression(expression,extraScopes=null,elementScopes=null,fnOptions=null){
 		fnOptions = { __proto__:null, ...fnOptions, scopeCtrl:this.ctrl };
-		let elementContext = !fnOptions.hideDocument ? this.execContext : null;
-		if(!hasOwn(fnOptions,'fnThis') && !fnOptions.hideDocument) fnOptions.fnThis = this.element;
+		let elementContext = !fnOptions?.hideDocument ? this.execContext : null;
+		if(!hasOwn(fnOptions,'fnThis') && !fnOptions?.hideDocument) fnOptions.fnThis = this.element;
 		let instance = this.ctrl.scopeDomInstance;
 		// Main controller scopes
 		let mainScopes = [];

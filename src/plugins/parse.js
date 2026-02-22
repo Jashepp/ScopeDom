@@ -257,7 +257,7 @@ export class pluginParse {
 		let nodes = new Set(), attribs = new Set();
 		if(parseTree || parseText){
 			for(let e of eTarget.childNodes){
-				if(this.instance.elementIgnored(e,false)) continue; // $ignore
+				if(this.instance.isElementIgnored(e,false)) continue; // $ignore
 				if(e.nodeType!==elementNodeType && e.nodeType!==textNodeType) continue;
 				if(e.shadowRoot || e.nodeName==='TEMPLATE' || e.nodeName==='SCRIPT' || e.nodeName==='STYLE') continue;
 				if(parseText && e.nodeType===textNodeType){

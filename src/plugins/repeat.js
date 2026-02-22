@@ -137,7 +137,7 @@ export class pluginRepeat {
 			if(useElement && !isElementLoaded(useElement)){
 				instance.onElementLoaded(useElement,this._setupRepeat.bind(this,plugInfo,attrib)); return true;
 			}
-			if(useElement.nodeName!=='TEMPLATE') for(let e=useElement; e; e=e?.parentNode) if(e===element){ useElement=false; break; }
+			if(useElement.nodeName!=='TEMPLATE') for(let e=useElement; e; e=e?.parentNode) if(e===element){ useElement=null; break; }
 			if(useElement){
 				if(useElement.nodeName==='TEMPLATE') mainTemplate = useElement;
 				else {
@@ -231,7 +231,7 @@ export class pluginRepeat {
 		else instance.onReady(finishSetupPluginRepeat.bind(this),false);
 		return true;
 	}
-	_createTemplateFromElement(state,{ fromElement, includeNode, fromElementAnchor=null, attribute, attribOpts }){
+	_createTemplateFromElement(state,{ __proto__=null, fromElement, includeNode, fromElementAnchor=null, attribute, attribOpts }){
 		let { mainTemplate, anchorStart } = state;
 		if(mainTemplate || !fromElement) return;
 		this.stateMap.delete(fromElement);
@@ -417,7 +417,7 @@ export class pluginRepeat {
 			// Set Element Scopes
 			let [$prevKey,$prevItem] = itemsArr[i-1]||[], [$nextKey,$nextItem] = itemsArr[i+1]||[];
 			let scope = { __proto__:null, $index:i, $isFirst:i===0, $isLast:i===l-1, [keyName]:key, [itemName]:item, $prevKey, $prevItem, $nextKey, $nextItem };
-			if(scopeName!==null && scopeName?.length>0) scope = { [scopeName]:scope }; // $repeat:scope="$repeat1" // $repeat1.$item
+			// if(scopeName!==null && scopeName?.length>0) scope = { __proto__:null, [scopeName]:scope }; // $repeat:scope="$repeat1" // $repeat1.$item
 			scope[symbRepeatElementScope] = elementAnchor;
 			anchor[symbRepeatElementScope] = elementAnchor;
 			// Set scope on anchor, alias on nodes

@@ -78,11 +78,11 @@ export class signalController {
 		return runFn(), [ signal, obs, obs.clear.bind(obs) ];
 	}
 	proxySignal(value,signal=null,useWeakRef=false){
-		if(value!==Object(value)) throw new TypeError("proxySignal value must not be a primitive");
+		if(value!==Object(value)) throw new TypeError("proxySignal root value must not be a primitive");
 		return new signalProxy(value,this,signal,useWeakRef);
 	}
 	defineProxySignal(obj,prop,value,signal=null){
-		if(value!==Object(value)) throw new TypeError("proxySignal value must not be a primitive");
+		if(value!==Object(value)) throw new TypeError("defineProxySignal root value must not be a primitive, try defineSignal instead");
 		if(!signal) signal = new signalInstance(this,value);
 		let proxy = new signalProxy(value,this,signal);
 		let sGet = ()=>(signal.record(),proxy), sSet = (v)=>{ this.defineProxySignal(obj,prop,v,signal); };
@@ -196,6 +196,7 @@ export class signalProxy {
 		let getValue, { target, targetSignal, proxies } = obj;
 		if(!target) return console.warn("scopeDom signalProxy: set() called on proxy with gc'd target",{prop}), false;
 		try{ getValue = Reflect.get(target,prop,receiver); }catch(err){ getValue = target[prop]; }
+		value = resolveSignal(value);
 		value = signalProxy._handleTypesSet(obj,prop,getValue,value);
 		if(Reflect.set(target,prop,value,receiver)){
 			let signal = signalProxy._proxyEnsureSignal(obj,prop,getValue,value);
@@ -211,7 +212,7 @@ export class signalProxy {
 		if(isIterable && targetSignal && target instanceof Array && prop==='length') targetSignal.record();
 		if(isIterable && targetSignal && target instanceof Map && prop==='size') targetSignal.record();
 		if(isIterable && targetSignal && target instanceof Set && prop==='size') targetSignal.record();
-		if(typeof getValue!=='function') return [ getValue ];
+		if(typeof getValue!=='function') return [ getValue, false ];
 		let wrapRecordFn, wrapChangeFn;
 		if(target instanceof Object && prop==='valueOf') wrapRecordFn = true;
 		else if(isIterable && target instanceof Array && hasOwn(Array.prototype,prop)){
@@ -226,6 +227,14 @@ export class signalProxy {
 			if(['add','clear','delete'].indexOf(prop)!==-1) wrapChangeFn = true;
 			else wrapRecordFn = true;
 		}
+		else if(isIterable && target instanceof WeakMap && hasOwn(WeakMap.prototype,prop)){
+			if(['delete','set','getOrInsert','getOrInsertComputed'].indexOf(prop)!==-1) wrapChangeFn = true;
+			else wrapRecordFn = true;
+		}
+		else if(isIterable && target instanceof WeakSet && hasOwn(WeakSet.prototype,prop)){
+			if(['add','delete'].indexOf(prop)!==-1) wrapChangeFn = true;
+			else wrapRecordFn = true;
+		}
 		if(wrapChangeFn) return [ function signalProxyFnWrapperChange(...args){
 			let result = signalProxy.apply({ target:getValue, targetSignal, signalCtrl },target,args);
 			return targetSignal.markChanged(), result;
@@ -233,7 +242,7 @@ export class signalProxy {
 		else if(wrapRecordFn) return [ function signalProxyFnWrapperRecord(...args){
 			return signalProxy.apply({ target:getValue, targetSignal, signalCtrl },target,args);
 		}, true ];
-		return [ getValue ];
+		return [ getValue, false ];
 	}
 	static _handleTypesSet(obj,prop,getValue,value){
 		let { target, targetSignal, isIterable } = obj;
@@ -281,7 +290,7 @@ export class signalProxy {
 	static preventExtensions(obj){ return Reflect.preventExtensions(obj.target); }
 }
 
-const signalSymb = Symbol('$signalInstance');
+export const signalSymb = Symbol('$signalInstance');
 export class signalInstance {
 	#ctrl; #_value; #_promise; #isGetting=true; #isSetting=true; #useWeakRef=false; #isObject=false;
 	constructor(signalCtrl,value,useWeakRef=false){
@@ -339,12 +348,13 @@ export class signalInstance {
 	}
 }
 
-export const resolveSignal = function(value,signalObs=null){
+export const resolveSignal = function(value,signalObs=null,strict=false){
 	if(signalProxy._isProxy(value)) value = signalProxy._getProxySignal(value);
 	if(value instanceof signalInstance){
 		if(signalObs) signalObs.recordSignal(value);
 		else value.record();
 		value = value.get();
 	}
+	if(strict && !(value instanceof signalInstance)) return null;
 	return value;
 };

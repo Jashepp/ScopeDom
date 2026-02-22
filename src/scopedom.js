@@ -18,15 +18,14 @@ import {
 	scopeExpressionContext, scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
 } from "./core/scope.js";
 
-
 const disableDocumentDefaultView = ()=>{
-	try{ defineProperty(window.document,'defaultView',{ __proto__:null,
+	try{ defineProperty(window.document,'defaultView',{
 		get(){ return console.warn("scopeDom: document.defaultView is disabled"), { __proto__:null, getComputedStyle:window.getComputedStyle.bind(window) }; }
 	}); }
 	catch(e){ console.warn("scopeDom: Failed to disable document.defaultView\n",e); }
 }
 
-const optionsDefaults = {
+const initOptionsDefaults = {
 	attribRegexMatch: /^\$((?:[\w\d]+)(?:\-[\w\d]+)*?)(?:\:((?:[\w\d]+)(?:\-[\w\d]+)*?))?$/, // group1: name, group2: option
 	attribRegexParts: /([\w\d]+)/g,
 	attribIgnore: '$ignore',
@@ -44,25 +43,45 @@ const optionsDefaults = {
 	signalDefer: true,
 	signalProxyAll: false,
 };
+
+const scopeElementAttribDefaults = {
+	isDefault: true,
+	attribute: null,
+	nameKey: null,
+	nameParts: null,
+	value: null,
+	options: null,
+};
+const scopeElementAttribOptionDefaults = {
+	isDefault: false,
+	attribute: null,
+	nameKey: null,
+	optionParts: null,
+	value: null
+};
+
 const allInstances = new Set();
+
 let mainInstance = null;
+
 let onlyInstance = null;
+
 let pluginsPostMain = null;
 
 class scopeDom {
 	
-	static init(options=null){
+	static init(initOptions={}){
 		if(mainInstance) throw new Error("scopeDom: main instance is already initialised");
-		let instance = new scopeDom(options);
+		let instance = new scopeDom(initOptions);
 		return instance.beginDomWatching(), instance;
 	}
-
+	
 	static getInstance(){
 		if(!mainInstance) throw new Error("scopeDom: no main instance, use scopeDom.init");
 		if(mainInstance.options.privateInstance) throw new Error("scopeDom: main instance is private, directly reference that instance instead");
 		return mainInstance;
 	}
-
+	
 	static controller(name,fn){
 		return scopeDom.getInstance().controller(name,fn);
 	}
@@ -78,7 +97,7 @@ class scopeDom {
 	constructor(initOptions={}){
 		if(onlyInstance) throw new Error("scopeDom: a private instance is already initialised");
 		initOptions = { __proto__:null, ...initOptions };
-		let options = this.options = { __proto__:null, ...optionsDefaults, ...initOptions };
+		let options = { __proto__:null, ...initOptionsDefaults, ...initOptions };
 		if(!options.globalContext && options.documentContext && !options.documentDefaultView && window.document) disableDocumentDefaultView();
 		else if(options.globalContext && !options.documentContext) throw new Error("scopeDom: For documentContext to be false, globalContext must also be false");
 		if(options.onlyInstance && mainInstance) throw new Error("scopeDom: only the main (first) instance can use { onlyInstance:true }");
@@ -86,6 +105,7 @@ class scopeDom {
 		if(!mainInstance) mainInstance = this;
 		allInstances.add(this);
 		let scope = options.scope===Object(options.scope) ? options.scope : new scopeBase();
+		this.options = options;
 		this.mainElement = options.element || null;
 		this.scopeCtrl = new scopeController(scope,null,null,false,this);
 		this.namedControllers = new Map();
@@ -149,19 +169,21 @@ class scopeDom {
 		this.namedControllers.set(name,ctrl);
 		// Default Controller
 		if(name===null){
-			let scope = this.scopeCtrl.scope;
+			let scope = this.scopeCtrl.scope, { globalContext, signalProxyAll } = this.options;
 			let setScopes=new Set(); for(let s=scope; s && s!==Object; s=getPrototypeOf(s)) setScopes.add(s); 
-			let proxy = new execExpressionProxy({ __proto__:null, mainScopes:[scope], getScopes:new Set([this.scopeCtrl.execContext,scope]), setScopes, silentHas:false });
-			return this.handleScopeCtrlFn(proxy,fn);
+			let proxy = new execExpressionProxy({ __proto__:null, mainScopes:[scope], getScopes:new Set([this.scopeCtrl.execContext,scope]), setScopes, silentHas:false, globalsHide:!globalContext, useSignalProxy:!!signalProxyAll });
+			this.handleScopeCtrlFn(proxy,fn);
 		}
+		return this;
 	}
+	
 	handleScopeCtrlFn(proxy,fn){
 		let signal = this.scopeCtrl.$signal.bind(this.scopeCtrl); // signal(value) : [get,set,signal]
 		let signalCtrl = this.scopeCtrl.signalCtrl, signalMethods = Object.fromEntries(
 			['createSignal','defineSignal','assignSignals','computeSignal','proxySignal','defineProxySignal']
 			.map(k=>[k,signalCtrl[k].bind(signalCtrl)])
 		);
-		return fn.apply(proxy,[{ scope:proxy, instance:this, controller:this.scopeCtrl, signal, ...signalMethods }]);
+		fn.apply(proxy,[{ scope:proxy, instance:this, controller:this.scopeCtrl, signal, ...signalMethods }]);
 	}
 	
 	// Element Scanning & Watching
@@ -232,7 +254,7 @@ class scopeDom {
 			this.pendingOnElementLoaded.get(element).add(cb);
 		}
 	}
-	elementIgnored(element,checkParents=false){
+	isElementIgnored(element,checkParents=false){
 		for(let e=element; e; e=checkParents?e.parentNode:null){
 			if(this.ignoreNodes.has(e)) return true;
 			if(e.nodeType===elementNodeType && e.hasAttribute(this.options.attribIgnore)){
@@ -247,13 +269,13 @@ class scopeDom {
 	connectElementAndChildren(element,act=true,list=new Set(),checkIgnoreParents=false){ // Connect parent before children
 		if(element.nodeType===commentNodeType){ this.connectElement(element); return; }
 		if(element.nodeType!==elementNodeType || element.nodeName==='SCRIPT' || element.nodeName==='STYLE') return;
-		if(this.elementIgnored(element,checkIgnoreParents)) return;
+		if(this.isElementIgnored(element,checkIgnoreParents)) return;
 		list.add(element);
 		if(element.childNodes && element.nodeName!=='TEMPLATE' && element.nodeName!=='svg' && !element.shadowRoot) for(let e of [...element.childNodes]) this.connectElementAndChildren(e,false,list);
 		if(act) for(let e of list.values()) if(e.isConnected) this.connectElement(e);
 	}
 	disconnectElementAndChildren(element,act=true,list=new Set()){ // Disconnect children before parent
-		if(this.elementIgnored(element,true)) return;
+		if(this.isElementIgnored(element,true)) return;
 		if(element.childNodes) for(let e of [...element.childNodes]) this.disconnectElementAndChildren(e,false,list);
 		list.add(element);
 		if(act) for(let e of list.values()) if(!e.isConnected) this.disconnectElement(e);
@@ -297,11 +319,11 @@ class scopeDom {
 			let nameKey = nameParts.join(' ');
 			if(nkAliases && hasOwn(nkAliases,nameKey)) nameKey = nkAliases[nameKey];
 			let attrib = attribs.get(nameKey);
-			if(!attrib) attribs.set(nameKey,attrib={ __proto__:null, isDefault, attribute:aName, nameKey, nameParts, value:null, options:new Map() });
+			if(!attrib) attribs.set(nameKey,attrib={ __proto__:null, ...scopeElementAttribDefaults, isDefault, attribute:aName, nameKey, nameParts, value:null, options:new Map() });
 			if(optionFull!==void 0 && optionFull.length>0){
 				let optionParts = regexMatchAllFirstGroup(optionFull,this.options.attribRegexParts);
 				let optionKey = optionParts.join(' ');
-				attrib.options.set(optionKey,{ __proto__:null, isDefault, attribute:aName, nameKey:optionKey, optionParts, value });
+				attrib.options.set(optionKey,{ __proto__:null, ...scopeElementAttribOptionDefaults, isDefault, attribute:aName, nameKey:optionKey, optionParts, value });
 			}
 			else attrib.value = value;
 		}
@@ -322,7 +344,7 @@ class scopeDom {
 				let nameKey = nameParts.join(' ');
 				if(nkAliases && hasOwn(nkAliases,nameKey)) nameKey = nkAliases[nameKey];
 				let defaultAttrib = defaults.get(nameKey);
-				if(!defaultAttrib) defaults.set(nameKey,defaultAttrib={ __proto__:null, isDefault:true, attribute, nameKey, nameParts, value:null, options:new Map() });
+				if(!defaultAttrib) defaults.set(nameKey,defaultAttrib={ __proto__:null, ...scopeElementAttribDefaults, isDefault:true, attribute, nameKey, nameParts, value:null, options:new Map() });
 				for(let [optKey,option] of options){
 					if(!defaultAttrib.options.has(optKey)) defaultAttrib.options.set(optKey,option);
 				}
@@ -662,13 +684,13 @@ class scopeDom {
 		let plugins=this.plugins, register=plugins.register;
 		if(register.has(plugin)) return true;
 		register.add(plugin);
-		if(typeof plugin==='function'){ plugin=new plugin(scopeDom,this); register.add(plugin); }
+		if(typeof plugin==='function' && plugin?.prototype?.constructor){ plugin=new plugin(scopeDom,this); register.add(plugin); }
 		// Methods
 		if(plugin.onConnect) plugins.onConnect.add(plugin.onConnect.bind(plugin));
 		if(plugin.onDisconnect) plugins.onDisconnect.add(plugin.onDisconnect.bind(plugin));
 		if(plugin.onPluginAdd) plugins.onPluginAdd.add(plugin.onPluginAdd.bind(plugin));
 		// Late Connect
-		if(plugins.init && plugin.onConnect) this.latePluginAdd_runConnect(plugin,this.mainElement,true);
+		if(plugins.init && plugin.onConnect && this.mainElement!==null) this.latePluginAdd_runConnect(plugin,this.mainElement,true);
 		// onPluginAdd Method
 		this.pluginsOnPluginAdd(plugin);
 		return true;
@@ -685,8 +707,8 @@ class scopeDom {
 	pluginsOnDisconnect(plugObj){
 		for(let pluginOnDisconnect of this.plugins.onDisconnect) try{ pluginOnDisconnect(plugObj); }catch(err){ console.error(err); }
 	}
-	pluginsOnPluginAdd(plugin){
-		for(let pluginOnPluginAdd of this.plugins.onPluginAdd) try{ pluginOnPluginAdd(plugin); }catch(err){ console.error(err); }
+	pluginsOnPluginAdd(plugObj){
+		for(let pluginOnPluginAdd of this.plugins.onPluginAdd) try{ pluginOnPluginAdd(plugObj); }catch(err){ console.error(err); }
 	}
 	latePluginAdd_runConnect(plugin,element,act=true,list=new Set()){
 		if(!plugin || !this.plugins.init || !this.cacheConnectedNodes.has(element)) return;

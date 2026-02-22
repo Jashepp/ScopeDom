@@ -17,6 +17,7 @@ function scheduledRAF(){
 	deferFn(()=>{ isDuringRAF=false; });
 }
 
+// animUtils
 export class animFrameHelper {
 	static get isDuringRAF(){ return isDuringRAF; };
 	static get isScheduled(){ return isScheduled; };
@@ -41,7 +42,7 @@ export class animFrameHelper {
 	}
 }
 
-
+// regexUtils
 export function regexMatchAll(str,r){ return str.matchAll(r); } // matchAll clones regex, and doesn't need lastIndex=0
 export function regexExec(str,r){ r.lastIndex=0; return r.exec(str); };
 export function regexTest(str,r){ r.lastIndex=0; return r.test(str); };

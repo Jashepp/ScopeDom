@@ -9,12 +9,25 @@ import {
 	isElementLoaded, setAttribute, eventRegistry,
 } from "./utils.js";
 import {
-	signalController, signalObserver, signalProxy, signalInstance, resolveSignal,
+	signalController, signalObserver, signalProxy, signalInstance, resolveSignal, signalSymb,
 } from "./signal.js";
 import {
 	scopeExpressionContext, scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
 } from "./scope.js";
 
+const execExpOptionsDefaults = {
+	useReturn: false,
+	fnThis: null,
+	strictMode: true,
+	useAsync: false,
+	silentHas: true,
+	globalsHide: true,
+	throwGlobals: true,
+	run: true,
+	scopeUseOwn: null,
+	scopeCtrl: null,
+	useSignalProxy: false
+};
 
 export class execExpression {
 	
@@ -34,12 +47,12 @@ export class execExpression {
 		if(!(extraScopes instanceof Set)) extraScopes = new Set(extraScopes);
 		let setScopes = new Set();
 		for(let ms of mainScopes) for(let s=ms; s && scopeAllowed(s); s=getPrototypeOf(s)) setScopes.add(s);
-		return { __proto__:null, getScopes:extraScopes, setScopes };
+		return { getScopes:extraScopes, setScopes };
 	}
 	
 	static buildExp(expression,mainScopes,extraScopes=[],options={}){
 		if(expression!==String(expression)) throw new Error("Invalid expression: "+expression);
-		options = { __proto__:null, useReturn:false, fnThis:null, strictMode:true, useAsync:false, silentHas:true, globalsHide:true, throwGlobals:true, run:true, scopeUseOwn:null, scopeCtrl:null, useSignalProxy:false, ...options };
+		options = { __proto__:null, ...execExpOptionsDefaults, ...options };
 		let { fnThis, useAsync, scopeUseOwn, silentHas, globalsHide, throwGlobals, scopeCtrl, useSignalProxy } = options;
 		useAsync = options.useAsync = useAsync || expression.indexOf('await')!==-1;
 		let globalObj = window, globalCatch = noopFn;
@@ -55,8 +68,8 @@ export class execExpression {
 		return { __proto__:null, result:null, firstScope:getScopes.values().next().value, function:fn, runFn, logFnError, getScopes, setScopes, proxy, options };
 	}
 	
-	static runExp(expression,mainScopes,extraScopes=[],options={}){
-		let exec = execExpression.buildExp(expression,mainScopes,extraScopes,options);
+	static runExp(expression,mainScopes,extraScopes=[],fnOptions={}){
+		let exec = execExpression.buildExp(expression,mainScopes,extraScopes,fnOptions);
 		let { runFn, logFnError, options:{ useAsync, run } } = exec;
 		if(run===false) return exec;
 		exec.result = runFn();
@@ -152,7 +165,7 @@ export class execExpressionProxy {
 			let isSignal, descriptor = getOwnPropertyDescriptor(target,prop);
 			if(descriptor?.value instanceof signalInstance) isSignal = true;
 			else if(descriptor?.get?.[signalSymb] instanceof signalInstance) isSignal = true;
-			if(descriptor && !isSignal && value===Object(value)) return obj.scopeCtrl.signalCtrl.proxySignal(value,null,true);
+			if(descriptor && !isSignal && value===Object(value)) return obj.scopeCtrl.signalCtrl.defineProxySignal(target,prop,value);
 		}
 		return value;
 	}
