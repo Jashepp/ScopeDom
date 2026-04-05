@@ -92,10 +92,11 @@ export const isElementLoaded = (()=>{
 	};
 })();
 
+const setAttributeElement = document.createElement('template');
 export function setAttribute(target,name,value){ // Set attribute with less name limitations
 	try{ target.setAttribute(name,value); }
 	catch(e){
-		let t=document.createElement('template'); t.innerHTML=`<span ${name}=""></span>`;
+		let t=setAttributeElement; t.innerHTML=`<span ${name}=""></span>`;
 		let a=t.content.firstChild.attributes.item(name).cloneNode(false); a.value=value;
 		target.attributes.setNamedItem(a);
 	}
