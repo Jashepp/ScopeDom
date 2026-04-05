@@ -26,6 +26,7 @@ const disableDocumentDefaultView = ()=>{
 }
 
 const initOptionsDefaults = {
+	dev: true, // Verbose developer logging
 	attribRegexMatch: /^\$((?:[\w\d]+)(?:\-[\w\d]+)*?)(?:\:((?:[\w\d]+)(?:\-[\w\d]+)*?))?$/, // group1: name, group2: option
 	attribRegexParts: /([\w\d]+)/g,
 	attribIgnore: '$ignore',
@@ -43,6 +44,7 @@ const initOptionsDefaults = {
 	signalDefer: true,
 	signalProxyAll: false,
 };
+let initOptionsScriptTag = null;
 
 const scopeElementAttribDefaults = {
 	isDefault: true,
@@ -70,6 +72,36 @@ let pluginsPostMain = null;
 
 class scopeDom {
 	
+	static setupScriptTag(){
+		scopeDom.setupScriptTag = noopFn;
+		// Check attributes on current script
+		for(let script=document?.currentScript;script;script=0){
+			// Options data-scopedom-options='{"globalContext":false}'
+			try{
+				let json, str = script?.getAttribute('data-scopedom-options') || null;
+				if(str && typeof str==='string') json = JSON.parse(str);
+				if(json && typeof json==='object' && Object.keys(json).length>0){
+					initOptionsScriptTag = { __proto__:null, ...json };
+					if(initOptionsScriptTag.dev) console.log("scopeDOM: loaded options from script tag");
+				}
+			} catch(err){ console.error("scopeDOM: failed to load options from script tag",err,script); }
+			// Init data-scopedom-init
+			if(script?.getAttribute('data-scopedom-init')===''){
+				try{
+					if(mainInstance){
+						console.log("scopeDom: main instance is already initialised");
+						return;
+					}
+					if(initOptionsScriptTag && 'privateInstance' in initOptionsScriptTag && initOptionsScriptTag.privateInstance){
+						console.log("scopeDOM: init via script tag cannot be used with option { privateInstance:true }");
+						return;
+					}
+					let instance = scopeDom.init();
+					if(instance.options.dev) console.log("scopeDOM: init from script tag");
+				} catch(err){ console.error("scopeDOM: failed to init from script tag",err,script); }
+			}
+		}
+	}
 	static init(initOptions={}){
 		if(mainInstance) throw new Error("scopeDom: main instance is already initialised");
 		let instance = new scopeDom(initOptions);
@@ -96,7 +128,7 @@ class scopeDom {
 	
 	constructor(initOptions={}){
 		if(onlyInstance) throw new Error("scopeDom: a private instance is already initialised");
-		initOptions = { __proto__:null, ...initOptions };
+		initOptions = { __proto__:null, ...initOptionsScriptTag, ...initOptions };
 		let options = { __proto__:null, ...initOptionsDefaults, ...initOptions };
 		if(!options.globalContext && options.documentContext && !options.documentDefaultView && window.document) disableDocumentDefaultView();
 		else if(options.globalContext && !options.documentContext) throw new Error("scopeDom: For documentContext to be false, globalContext must also be false");
@@ -128,7 +160,7 @@ class scopeDom {
 		try{ this.initPlugins(); }catch(err){ console.error("scopeDom: error during initPlugins:",err); }
 		if(mainInstance===this){
 			pluginsPostMain = new Set();
-			for(let p of Object.values(window.scopeDomPlugins)) pluginsPostMain.add(p);
+			for(let p of Object.values(window.scopeDomPlugins||[])) pluginsPostMain.add(p);
 		}
 		if(options.privateInstance && !('allowLatePlugins' in initOptions)) options.allowLatePlugins = false;
 		Object.freeze(this.options);
@@ -698,7 +730,7 @@ class scopeDom {
 	initPlugins(){
 		if(this.plugins.init) return;
 		if(!this.options.allowLatePlugins) throw console.log(this.options), new Error("scopeDom: late plugin adding is disabled, due to instance { allowLatePlugins:false }");
-		for(let plugin of pluginsPostMain||Object.values(window.scopeDomPlugins)||[]) this.pluginAdd(plugin);
+		for(let plugin of pluginsPostMain||Object.values(window.scopeDomPlugins||[])||[]) this.pluginAdd(plugin);
 		this.plugins.init=true;
 	}
 	pluginsOnConnect(plugObj){
@@ -756,6 +788,8 @@ Object.assign(scopeDom,{
 	scopeElementController,
 	eventRegistry
 });
+
+scopeDom.setupScriptTag();
 Object.freeze(scopeDom);
 
 export default scopeDom;
