@@ -17,23 +17,29 @@ import {
 
 
 export class signalController {
+	
 	constructor(scopeCtrl){
 		if(scopeCtrl instanceof scopeElementController) scopeCtrl = scopeCtrl.ctrl;
 		this.scopeCtrl = scopeCtrl;
 		this.observers = new Set();
 		this.observersRecording = new Set();
 	}
+	
 	createObserver(options={}){ let o=new signalObserver(this,options); this.observers.add(o); return o; }
+	
 	removeObserver(observer,clear=true){
 		this.observers.delete(observer); this.observersRecording.delete(observer);
 		if(clear) observer.clear();
 	}
-	triggerChange(signal){
-		for(let observer of this.observers) if(observer.hasSignal(signal)) observer.triggerChange(signal);
+	
+	triggerChange(signal,oldValue,newValue){
+		for(let observer of this.observers) if(observer.hasSignal(signal)) observer.triggerChange(signal,oldValue,newValue);
 	}
+	
 	triggerRecording(signal){
 		for(let observer of this.observersRecording) if(!observer.hasSignal(signal)) observer.recordSignal(signal);
 	}
+	
 	isolateRecording(fn){
 		let self = this;
 		return function signalIsolatedRecording(...args){
@@ -44,6 +50,7 @@ export class signalController {
 			return result;
 		};
 	}
+	
 	// Signal Helper Methods
 	createSignal(value,useWeakRef=false){
 		if(value instanceof Array) throw new TypeError("createSignal value is an Array, use proxySignal instead");
@@ -52,6 +59,7 @@ export class signalController {
 		let signal = new signalInstance(this,value,useWeakRef); signal.record();
 		return signal;
 	}
+	
 	defineSignal(obj,prop,value=void 0,descriptor={},useOriginal=true){
 		let { configurable=true, enumerable=true, get:oGet=null, set:oSet=null } = { __proto__:null, ...descriptor };
 		let signal = value instanceof signalInstance ? value : this.createSignal(value), sGet, sSet;
@@ -64,23 +72,60 @@ export class signalController {
 		defineProperty(obj,prop,{ __proto__:null, configurable, enumerable, get:sGet, set:sSet });
 		return signal;
 	}
+	
 	assignSignals(target,source){
 		for(let [key,val] of Object.entries(source)) this.defineSignal(target,key,val,getOwnPropertyDescriptor(source,key));
 		return target;
 	}
-	computeSignal(fn,options={}){ // [ signal, observer, clear() ]
+	
+	computeSignalPush(fn,options={}){ // [ signal, observer, clear() ]
 		let signal = this.createSignal(void 0);
 		let obs = this.createObserver(options);
 		obs.signalsIgnore.add(signal);
-		let computeFn = this.isolateRecording(obs.wrapRecorder(fn));
-		let runFn = function signalComputeFn(obs,trigger){ try{ signal.set(computeFn(trigger)); }catch(err){ console.error(err); } };
+		let recordingFn = this.isolateRecording(obs.wrapRecorder(fn));
+		let runFn = function signalComputePushFn(obs,trigger){
+			obs.clearSignals();
+			signal.set(recordingFn(trigger));
+		};
 		obs.addListener(runFn);
-		return runFn(), [ signal, obs, obs.clear.bind(obs) ];
+		try{ runFn(obs,null); } catch(err){ console.error(err); }
+		return [ signal, obs, obs.clear.bind(obs) ];
 	}
+	
+	computeSignalPull(fn,options={}){ // [ signal, observer, clear() ]
+		let signal = this.createSignal(void 0);
+		let obs = this.createObserver(options);
+		obs.signalsIgnore.add(signal);
+		let isUpdating = false;
+		let markChanged = signal.markChanged.bind(signal);
+		let updateFn = function signalUpdate(){
+			if(isUpdating) return;
+			isUpdating = true;
+			signal.invalidatePull();
+			markChanged();
+			isUpdating = false;
+		};
+		let recordingFn = this.isolateRecording(obs.wrapRecorder(fn));
+		signal.addPullListener(function signalComputePullFn(){
+			obs.clearSignals();
+			signal.set(recordingFn());
+		});
+		obs.addListener(updateFn);
+		signal.invalidatePull();
+		return [ signal, obs, obs.clear.bind(obs) ];
+	}
+	
+	computeSignal(fn,options={}){
+		options = { __proto__:null, pull:true, ...options };
+		if(options.pull) return this.computeSignalPull(fn,options);
+		else return this.computeSignalPush(fn,options);
+	}
+	
 	proxySignal(value,signal=null,useWeakRef=false){
 		if(value!==Object(value)) throw new TypeError("proxySignal root value must not be a primitive");
 		return new signalProxy(value,this,signal,useWeakRef);
 	}
+	
 	defineProxySignal(obj,prop,value,signal=null){
 		if(value!==Object(value)) throw new TypeError("defineProxySignal root value must not be a primitive, try defineSignal instead");
 		if(!signal) signal = new signalInstance(this,value);
@@ -90,9 +135,11 @@ export class signalController {
 		defineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get:sGet, set:sSet });
 		return signal.record(), signal.set(proxy), proxy;
 	}
+	
 }
 
 export class signalObserver {
+	
 	constructor(signalCtrl,options={}){
 		options = { __proto__:null, defer:signalCtrl?.scopeDomInstance?.options?.signalDefer, ...options };
 		this.ctrl = signalCtrl;
@@ -101,22 +148,25 @@ export class signalObserver {
 		this.listeners = new Set();
 		this.isRecording = false;
 		this.isChanging = false;
-		this.hasChanged = false;
 		this.deferChange = options.defer===true || options.defer===void 0;
 		this.isDeferring = false;
 	}
+	
 	hasSignal(signal){ return this.signals.has(signal); }
-	recordSignal(signal){ if(!this.signals.has(signal) && !this.signalsIgnore.has(signal)) this.signals.add(signal); }
-	triggerChange(signal){
+	
+	recordSignal(signal){
+		if(!this.signals.has(signal) && !this.signalsIgnore.has(signal)) this.signals.add(signal);
+	}
+	
+	triggerChange(signal,oldValue,newValue){
 		if(this.isRecording || !this.signals.has(signal)) return;
-		this.hasChanged = true;
 		let self=this;
-		function signalObserverListener(fn){ try{ fn(self,signal); }catch(err){ console.error(err); } };
+		function signalObserverListener(fn){ fn(self,signal,oldValue,newValue); };
 		function signalObserverTrigger(){
 			self.isDeferring = false;
 			if(self.isChanging || self.listeners.size===0) return;
 			self.isChanging = true;
-			for(let fn of self.listeners) signalObserverListener(fn);
+			for(let fn of self.listeners) try{ signalObserverListener(fn); } catch(err){ console.error(err); }
 			self.isChanging = false;
 		}
 		if(!this.deferChange) return signalObserverTrigger();
@@ -124,18 +174,21 @@ export class signalObserver {
 		this.isDeferring = true;
 		deferFn(signalObserverTrigger);
 	}
+	
 	startRecording(){
 		if(this.isRecording) return false;
 		this.isRecording = true;
 		this.ctrl.observersRecording.add(this);
 		return true;
 	}
+	
 	stopRecording(){
 		if(!this.isRecording) return false;
 		this.isRecording = false;
 		this.ctrl.observersRecording.delete(this);
 		return true;
 	}
+	
 	wrapRecorder(fn){
 		let self = this;
 		return function signalObserverRecorder(...args){
@@ -145,14 +198,16 @@ export class signalObserver {
 			return result;
 		};
 	}
-	consumeHasChanged(){ let r=this.hasChanged; this.hasChanged=false; return r; }
+	
 	addListener(fn){ this.listeners.add(fn); return this.removeListener.bind(this,fn); }
 	removeListener(fn){ this.listeners.delete(fn); }
 	clear(){ this.listeners.clear(); this.signals=new WeakSet(); }
+	clearSignals(){ this.signals=new WeakSet(); }
 }
 
 const spProxyMap = new WeakMap(), spTargetMap = new WeakMap();
 export class signalProxy {
+	
 	constructor(target,signalCtrl,targetSignal=null,useWeakRef=false){
 		if(spProxyMap.has(target)) return target;
 		if(spTargetMap.has(target)){ let p=spTargetMap.get(target); if(p && spProxyMap.has(p)) return p; }
@@ -166,8 +221,10 @@ export class signalProxy {
 		spTargetMap.set(target,proxy);
 		return proxy;
 	}
+	
 	static _isProxy(target){ return spProxyMap.has(target); }
 	static _getProxySignal(target){ return spProxyMap.get(target)?.targetSignal; }
+	
 	static has = function signalProxyHas(obj,prop){
 		let { target, proxies, signals } = obj;
 		if(!target) return console.warn("scopeDom signalProxy: has() called on proxy with gc'd target",{prop}), false;
@@ -176,6 +233,7 @@ export class signalProxy {
 		if(!hasProp && proxies.has(prop)) proxies.delete(prop);
 		return hasProp;
 	}
+	
 	static get = function signalProxyGet(obj,prop,receiver){
 		let getValue, { target, targetSignal, proxies, signalCtrl } = obj;
 		if(!target) return void console.warn("scopeDom signalProxy: get() called on proxy with gc'd target",{prop});
@@ -192,6 +250,7 @@ export class signalProxy {
 		let proxy = new signalProxy(getValue,signalCtrl,signal,true);
 		return proxies.set(prop,proxy), proxy;
 	}
+	
 	static set = function signalProxySet(obj,prop,value,receiver){
 		let getValue, { target, targetSignal, proxies } = obj;
 		if(!target) return console.warn("scopeDom signalProxy: set() called on proxy with gc'd target",{prop}), false;
@@ -206,6 +265,7 @@ export class signalProxy {
 		}
 		return false;
 	}
+	
 	static _handleTypesGet(obj,prop,getValue){
 		let { target, targetSignal, signalCtrl, isIterable } = obj;
 		if(isIterable && targetSignal && prop*1>=0) targetSignal.record();
@@ -260,6 +320,7 @@ export class signalProxy {
 		signal.record(); signals.set(prop,signal);
 		return signal;
 	}
+	
 	static deleteProperty(obj,prop){
 		let { target, proxies, signals } = obj;
 		if(!target) return void console.warn("scopeDom signalProxy: deleteProperty() called on proxy with gc'd target",{prop});
@@ -281,6 +342,7 @@ export class signalProxy {
 		if(isPrimitive) return result;
 		return new signalProxy(result,signalCtrl);
 	}
+	
 	static defineProperty(obj,prop,attributes){ return Reflect.defineProperty(obj.target,prop,attributes); }
 	static getOwnPropertyDescriptor(obj,prop){ Reflect.getOwnPropertyDescriptor(obj.target,prop); }
 	static setPrototypeOf(obj,prototype){ return Reflect.setPrototypeOf(obj.target,prototype); }
@@ -292,44 +354,71 @@ export class signalProxy {
 
 export const signalSymb = Symbol('$signalInstance');
 export class signalInstance {
-	#ctrl; #_value; #_promise; #isGetting=true; #isSetting=true; #useWeakRef=false; #isObject=false;
+	
+	#ctrl;
+	#_value; #_promise; #useWeakRef=false; #isObject=false;
+	#isGetting=true;
+	#pendingPull=true; #pullListeners=new Set();
 	constructor(signalCtrl,value,useWeakRef=false){
 		this.#ctrl = signalCtrl; this.#useWeakRef = useWeakRef && !!window.WeakRef;
-		this.#setFn(value);
-		this.#isGetting = this.#isSetting = false;
+		if(value instanceof Promise || typeof value?.then==="function" || value instanceof signalInstance) this.set(value);
+		else this.#setFn(value);
+		this.#isGetting = false;
 	}
-	get #value(){ return this.#useWeakRef && this.#isObject ? this.#_value?.deref() : this.#_value; }
-	set #value(v){ this.#isObject=(v===Object(v)); this.#_value = this.#useWeakRef && this.#isObject ? new WeakRef(v) : v; }
+	
+	get #value(){ return (this.#useWeakRef && this.#isObject) ? this.#_value?.deref() : this.#_value; }
+	set #value(v){ this.#isObject=(v===Object(v)); this.#_value = (this.#useWeakRef && this.#isObject) ? new WeakRef(v) : v; }
 	get #promise(){ return this.#useWeakRef ? this.#_promise?.deref() : this.#_promise; }
 	set #promise(v){ this.#_promise = new WeakRef(v); }
 	#setFn = function signalSetInner(v){
-		if(v===this.#value) return;
-		this.#value = v;
-		let oldP = this.#promise;
-		let isP = (v instanceof Promise || typeof v?.then==="function");
-		if(!isP && oldP!==void 0) this.#promise = void 0;
-		if(isP && oldP!==v){
-			this.#promise = v;
-			v.then(this.#ctrl.triggerChange.bind(this.#ctrl,this,v),this.#ctrl.triggerChange.bind(this.#ctrl,this));
-		}
+		this.#pendingPull = false;
+		if(this.#value!==v) this.#value = v;
 	}
+	
+	/** Invalidate this signal for computeSignalPull */
+	invalidatePull(){ this.#pendingPull = true; }
+	/** Listen callbacks for each get (excluding getSilent) */
+	addPullListener(fn){ this.#pullListeners.add(fn); }
+	
+	subscribe(fn,defer=this.#ctrl?.scopeDomInstance?.options?.signalDefer){
+		defer = defer===true || defer===void 0;
+		let obs = this.#ctrl.createObserver({ defer });
+		obs.addListener(fn);
+		return obs;
+	}
+	
 	record(){ this.#ctrl.triggerRecording(this); }
-	markChanged(){ this.#ctrl.triggerChange(this); }
+	markChanged(){
+		let oldValue = this.#value;
+		this.#ctrl.triggerChange(this,oldValue,oldValue);
+	}
 	getSilent(){ return this.#value; }
 	get = function signalGet(){
 		if(this.#isGetting) return this.#value;
 		this.#isGetting = true;
 		this.#ctrl.triggerRecording(this);
+		if(this.#pendingPull) for(let listener of this.#pullListeners) try{ listener(); }catch(err){ console.error(err); }
 		this.#isGetting = false;
 		return this.#value;
 	}
 	set = function signalSet(v){
-		if(this.#isSetting || v===this.#value) return;
-		this.#setFn(v);
-		this.#isSetting = true;
-		this.#ctrl.triggerChange(this);
-		this.#isSetting = false;
+		if(v instanceof signalInstance) v = v.get();
+		let oldValue = this.#value, newValue = v;
+		if(oldValue===newValue) return;
+		let oldPromise = this.#promise, isPromise = (v instanceof Promise || typeof v?.then==="function");
+		if(isPromise){
+			if(oldPromise===newValue) return;
+			this.#setFn(newValue);
+			this.#promise = newValue;
+			newValue.then(this.#ctrl.triggerChange.bind(this.#ctrl,this,oldValue,newValue),this.#ctrl.triggerChange.bind(this.#ctrl,this,oldValue,newValue));
+		}
+		else {
+			if(oldPromise!==void 0) this.#promise = void 0;
+			this.#setFn(newValue);
+			this.#ctrl.triggerChange(this,oldValue,newValue);
+		}
 	}
+	
 	get value(){ return this.get(); }
 	set value(v){ this.set(v); }
 	get toString(){ let v=this.get(); return v?.toString?.bind(v); }
@@ -345,6 +434,7 @@ export class signalInstance {
 		if(hint==='default') return v;
 		if(hint==='string') return `${v}`;
 		if(hint==='number') return +v;
+		console.info('ScopeDom.signalInstance [Symbol.toPrimitive](hint) Unknown hint:',hint);
 	}
 }
 
@@ -352,7 +442,6 @@ export const resolveSignal = function(value,signalObs=null,strict=false){
 	if(signalProxy._isProxy(value)) value = signalProxy._getProxySignal(value);
 	if(value instanceof signalInstance){
 		if(signalObs) signalObs.recordSignal(value);
-		else value.record();
 		value = value.get();
 	}
 	if(strict && !(value instanceof signalInstance)) return null;
