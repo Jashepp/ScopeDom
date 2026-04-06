@@ -66,8 +66,8 @@ Copyright (c) 2026 Jason Sheppard [@Jashepp](https://github.com/Jashepp).
 ---
 ### 🔗 Links
 
-**Github Repository**: [https://github.com/Jashepp/Scope-dom][github-url]
+**Github Repository**: [https://github.com/Jashepp/ScopeDom][github-url]
 
-[github-url]: https://github.com/Jashepp/Scope-dom
-[github-releases]: https://github.com/Jashepp/Scope-dom/releases
-[github-tags]: https://github.com/Jashepp/Scope-dom/tags
+[github-url]: https://github.com/Jashepp/ScopeDom
+[github-releases]: https://github.com/Jashepp/ScopeDom/releases
+[github-tags]: https://github.com/Jashepp/ScopeDom/tags
