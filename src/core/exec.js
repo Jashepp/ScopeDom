@@ -15,6 +15,9 @@ import {
 	scopeExpressionContext, scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
 } from "./scope.js";
 
+/**
+ * @template {object} execExpOptions
+ */
 const execExpOptionsDefaults = {
 	useReturn: false,
 	fnThis: null,
@@ -28,6 +31,19 @@ const execExpOptionsDefaults = {
 	scopeCtrl: null,
 	useSignalProxy: true
 };
+
+/**
+ * @typedef {object} execExpInstance
+ * @prop {null|any} result
+ * @prop {object} firstScope
+ * @prop {Function} function
+ * @prop {Function} runFn
+ * @prop {Error|any} logFnError
+ * @prop {Set<object>} getScopes
+ * @prop {Set<object>} setScopes
+ * @prop {execExpressionProxy|any} proxy
+ * @prop {execExpOptions} options
+ */
 
 export class execExpression {
 	
@@ -50,6 +66,13 @@ export class execExpression {
 		return { getScopes:extraScopes, setScopes };
 	}
 	
+	/**
+	 * @param {string} expression
+	 * @param {Array<object>|Set<object>} mainScopes
+	 * @param {Array<object>|Set<object>} extraScopes
+	 * @param {execExpOptions} options
+	 * @returns {execExpInstance}
+	 */
 	static buildExp(expression,mainScopes,extraScopes=[],options={}){
 		if(expression!==String(expression)) throw new Error("Invalid expression: "+expression);
 		options = { __proto__:null, ...execExpOptionsDefaults, ...options };
@@ -68,6 +91,13 @@ export class execExpression {
 		return { __proto__:null, result:null, firstScope:getScopes.values().next().value, function:fn, runFn, logFnError, getScopes, setScopes, proxy, options };
 	}
 	
+	/**
+	 * @param {string} expression
+	 * @param {Array<object>|Set<object>} mainScopes
+	 * @param {Array<object>|Set<object>} extraScopes
+	 * @param {execExpOptions|object|null} fnOptions
+	 * @returns {execExpInstance}
+	 */
 	static runExp(expression,mainScopes,extraScopes=[],fnOptions={}){
 		let exec = execExpression.buildExp(expression,mainScopes,extraScopes,fnOptions);
 		let { runFn, logFnError, options:{ useAsync, run } } = exec;

@@ -67,6 +67,14 @@ export class scopeControllerContext {
 
 export class scopeController {
 	
+	/**
+	 * @constructor
+	 * @param {scopeBase|object|null} scopeObj
+	 * @param {EventTarget|null} eventTarget
+	 * @param {scopeController|scopeElementController|null} parentCtrl
+	 * @param {boolean} isolated
+	 * @param {scopeDom|null} scopeDomInstance
+	 */
 	constructor(scopeObj=new scopeBase(),eventTarget=null,parentCtrl=null,isolated=false,scopeDomInstance=null){
 		if(scopeObj!==Object(scopeObj)) throw new Error("Missing scope object");
 		if(parentCtrl instanceof scopeElementController) parentCtrl = parentCtrl.ctrl;
@@ -77,9 +85,12 @@ export class scopeController {
 		this.topCtrl = parentCtrl?.topCtrl || null;
 		this.parentCtrl = parentCtrl || null;
 		this.isolated = isolated;
+		/** @type {scopeInstance} */
 		this.scope = new scopeInstance(scopeObj,this);
+		/** @type {scopeControllerContext} */
 		this.execContext = new scopeControllerContext(this);
 		this.isDuringUpdate = false;
+		/** @type {signalController} */
 		this.signalCtrl = scopeDomInstance?.scopeCtrl?.signalCtrl || parentCtrl?.signalCtrl || new signalController(this);
 	}
 	
@@ -138,53 +149,116 @@ export class scopeController {
 		return target.dispatchEvent(new CustomEvent(name,options));
 	}
 	
+	/**
+	 * Create new signal instance & record it immediately to any recording signal observers
+	 * @param {any=} value
+	 * @returns {Array<Function,Function,signalInstance>} [getter,setter,signalInstance]
+	 */
 	$signal(value=void 0){ let s=this.signalCtrl.createSignal(value); return [s.get.bind(s),s.set.bind(s),s]; }
 	
+	/** @type {typeof signalController.prototype.createSignal} */
 	$createSignal(value=void 0,useWeakRef=false){ return this.signalCtrl.createSignal(value,useWeakRef); }
 	
+	/** @type {typeof signalController.prototype.defineSignal} */
 	$defineSignal(obj,prop,value=void 0,descriptor=null,useOriginal=true){ return this.signalCtrl.defineSignal(obj,prop,value,descriptor,useOriginal); }
 	
+	/** @type {typeof signalController.prototype.assignSignals} */
 	$assignSignals(target,source){ return this.signalCtrl.assignSignals(target,source); } // target
 	
+	/** @type {typeof signalController.prototype.computeSignal} */
 	$computeSignal(fn,options={}){ return this.signalCtrl.computeSignal(fn,options); } // [ signal, observer, clear() ]
 	
+	/** @type {typeof signalController.prototype.proxySignal} */
 	$proxySignal(value){ return this.signalCtrl.proxySignal(value); } // proxy
 	
+	/** @type {typeof signalController.prototype.defineProxySignal} */
 	$defineProxySignal(obj,prop,value){ return this.signalCtrl.defineProxySignal(obj,prop,value); } // proxy
 	
 }
 
 const seSymb = Symbol('$scopeElementContext');
+/** @class scopeElementContext */
 export class scopeElementContext {
+	
+	/** @param {scopeElementController} eScopeCtrl */
 	constructor(eScopeCtrl){ this[seSymb]=eScopeCtrl; }
+	
+	/** @type {HTMLElement} */
 	get $this(){ return this[seSymb].element; };
+	
+	/** @type {HTMLElement} */
 	get $parent(){ return (this[seSymb].element.parentNode instanceof ShadowRoot && this[seSymb].element.parentNode.host) ? this[seSymb].element.parentNode.host : this[seSymb].element.parentNode; };
+	
+	/** @type {HTMLElement} */
 	get $previous(){ return this[seSymb].element.previousElementSibling; };
+	
+	/** @type {HTMLElement} */
 	get $next(){ return this[seSymb].element.nextElementSibling; };
+	
+	/** @type {Document} */
 	get document(){ return this[seSymb].element.ownerDocument; };
+	
+	/** @type {typeof HTMLElement.prototype.ownerDocument.querySelector} */
 	$(query){ return this[seSymb].element.ownerDocument.querySelector(query); };
+	
+	/** @type {typeof HTMLElement.prototype.querySelector} */
 	$$(query){ return this[seSymb].element.querySelector(query); };
+	
+	/** @type {typeof scopeElementController.prototype.$offDom} */
 	$offDom(name=null,listener=null,options=null){ return this[seSymb].$offDom(name,listener,options); };
+	
+	/** @type {typeof scopeElementController.prototype.$onDom} */
 	$onDom(name,listener,options={},returnRemove=false){ return this[seSymb].$onDom(name,listener,options,returnRemove); };
+	
+	/** @type {typeof scopeElementController.prototype.$onceDom} */
 	$onceDom(name,listener,options={},returnRemove=false){ return this[seSymb].$onceDom(name,listener,options,returnRemove); };
+	
+	/** @type {typeof scopeElementController.prototype.$emitDom} */
 	$emitDom(name,detail=null,options=null){ return this[seSymb].$emitDom(name,detail,options); };
+	
+	/**
+	 * @param {string} name
+	 * @param {object} detail
+	 * @param {object} options
+	 * @param {string} uniqueID
+	 */
 	$emitDomRAF(name,detail=null,options=null,uniqueID=this.$attribute||'$emitDomRAF:sec'){ return animFrameHelper.onceRAF(this[seSymb].element,uniqueID+':'+name,()=>this[seSymb].$emitDom(name,detail,options)); };
+	
 }
 
+/** @class scopeElementController */
 export class scopeElementController {
 	
+	/**
+	 * @constructor
+	 * @param {HTMLElement} element
+	 * @param {scopeBase|object|null|undefined} scopeObj
+	 * @param {scopeController|scopeElementController|null|undefined} scopeCtrl
+	 */
 	constructor(element,scopeObj=void 0,scopeCtrl=void 0){
 		if(!element) throw new Error("Missing element?");
 		if(scopeCtrl instanceof scopeElementController) scopeCtrl = scopeCtrl.ctrl;
+		/** @type {typeof HTMLElement} */
 		this.element = element;
+		/** @type {typeof scopeController} */
 		this.ctrl = !scopeObj && scopeCtrl ? scopeCtrl : new scopeController(scopeObj,scopeCtrl?.eventTarget,scopeCtrl);
+		/** @type {typeof scopeInstance} */
 		this.scope = this.ctrl.scope;
+		/** @type {typeof eventRegistry} */
 		this.eventRegistry = this.ctrl.eventRegistry;
+		/** @type {typeof scopeElementContext} */
 		this.execContext = new scopeElementContext(this);
 		this.isDuringUpdateDom = false;
 	}
 	
 	// extraScopes [{},...] elementScopes: [[element,scopesArr],...]
+	/**
+	 * @param {string} expression 
+	 * @param {Array<object>|null} extraScopes 
+	 * @param {Array<object>|null} elementScopes 
+	 * @param {execExp.execExpOptions|object|null} fnOptions
+	 * @returns 
+	 */
 	execElementExpression(expression,extraScopes=null,elementScopes=null,fnOptions=null){
 		fnOptions = { __proto__:null, ...fnOptions, scopeCtrl:this.ctrl };
 		let elementContext = !fnOptions?.hideDocument ? this.execContext : null;
@@ -265,18 +339,40 @@ export class scopeElementController {
 		emitChildren(this.element,emitSelf);
 	}
 	
+	/**
+	 * @param {string} name
+	 * @param {Function} listener
+	 * @param {object} options
+	 */
 	$offDom(name=null,listener=null,options=null){
 		return this.ctrl.$offTarget(this.element,name,listener,options);
 	}
 	
+	/**
+	 * @param {string} name
+	 * @param {Function} listener
+	 * @param {object} options
+	 * @param {boolean} returnRemove
+	 */
 	$onDom(name,listener,options={},returnRemove=false){
 		return this.ctrl.$onTarget(this.element,name,listener,options,returnRemove);
 	}
 	
+	/**
+	 * @param {string} name
+	 * @param {Function} listener
+	 * @param {object} options
+	 * @param {boolean} returnRemove
+	 */
 	$onceDom(name,listener,options={},returnRemove=false){
 		return this.ctrl.$onceTarget(this.element,name,listener,options,returnRemove);
 	}
 	
+	/**
+	 * @param {string} name
+	 * @param {object} detail
+	 * @param {object} options
+	 */
 	$emitDom(name,detail=null,options=null){
 		return this.ctrl.$emitTarget(this.element,name,detail,options);
 	}

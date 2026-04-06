@@ -52,6 +52,12 @@ export class signalController {
 	}
 	
 	// Signal Helper Methods
+	/**
+	 * Create signalInstance & record it immediately to any recording signalObserver.
+	 * @param {any} value Signal value
+	 * @param {boolean=} useWeakRef Use WeakRef
+	 * @returns {signalInstance}
+	 */
 	createSignal(value,useWeakRef=false){
 		if(value instanceof Array) throw new TypeError("createSignal value is an Array, use proxySignal instead");
 		if(value instanceof Map) throw new TypeError("createSignal value is a Map, use proxySignal instead");
@@ -60,6 +66,16 @@ export class signalController {
 		return signal;
 	}
 	
+	/**
+	 * Create signalInstance & record it immediately to any recording signalObserver.
+	 * Also, define a getter/setter on the target object.
+	 * @param {object} obj Target Object
+	 * @param {string} prop Property Name
+	 * @param {any=} value Signal Value
+	 * @param {PropertyDescriptor|object=} descriptor Property descriptor options
+	 * @param {boolean=} useOriginal Use original existing getter/setter
+	 * @returns {signalInstance}
+	 */
 	defineSignal(obj,prop,value=void 0,descriptor={},useOriginal=true){
 		let { configurable=true, enumerable=true, get:oGet=null, set:oSet=null } = { __proto__:null, ...descriptor };
 		let signal = value instanceof signalInstance ? value : this.createSignal(value), sGet, sSet;
@@ -73,11 +89,24 @@ export class signalController {
 		return signal;
 	}
 	
+	/**
+	 * Create signalInstance & record it immediately to any recording signalObserver.
+	 * Also, for each source property, define a getter/setter on the target object.
+	 * @param {object} target Target Object
+	 * @param {object} source Source Object
+	 * @returns {object} Target Object
+	 */
 	assignSignals(target,source){
 		for(let [key,val] of Object.entries(source)) this.defineSignal(target,key,val,getOwnPropertyDescriptor(source,key));
 		return target;
 	}
 	
+	/**
+	 * Create a PUSH-based computed signal, which gets updated every time any of it's dependencies are updated.
+	 * @param {Function} fn Callback to run when signalObserver is notified of a change. This signal's value will be set to the result of the callback.
+	 * @param {object=} options { defer:true|false }
+	 * @returns {Array<signalInstance,signalObserver,Function>} [ signalInstance, signalObserver, clear() ]
+	 */
 	computeSignalPush(fn,options={}){ // [ signal, observer, clear() ]
 		let signal = this.createSignal(void 0);
 		let obs = this.createObserver(options);
@@ -92,6 +121,12 @@ export class signalController {
 		return [ signal, obs, obs.clear.bind(obs) ];
 	}
 	
+	/**
+	 * Create a PULL-based computed signal which only runs when this signal is read.
+	 * @param {Function} fn Callback to run when computing this signal's read.
+	 * @param {object=} options { defer:true|false }
+	 * @returns {Array<signalInstance,signalObserver,Function>} [ signalInstance, signalObserver, clear() ]
+	 */
 	computeSignalPull(fn,options={}){ // [ signal, observer, clear() ]
 		let signal = this.createSignal(void 0);
 		let obs = this.createObserver(options);
@@ -115,17 +150,41 @@ export class signalController {
 		return [ signal, obs, obs.clear.bind(obs) ];
 	}
 	
+	/**
+	 * Create a computed signal. Either push or pull (default).
+	 * PUSH-based computed signals run every time any of its dependencies are updated.
+	 * PULL-based computed signals only run when the signal is read.
+	 * @param {Function} fn Compute callback
+	 * @param {object=} options { pull:true|false }
+	 * @returns {Array<signalInstance,signalObserver,Function>} [ signalInstance, signalObserver, clear() ]
+	 */
 	computeSignal(fn,options={}){
 		options = { __proto__:null, pull:true, ...options };
 		if(options.pull) return this.computeSignalPull(fn,options);
 		else return this.computeSignalPush(fn,options);
 	}
 	
+	/**
+	 * Create signalProxy which creates a signalInstance & signalProxy for every property accessed. Infinitely deep.
+	 * @param {any} value Object to proxy
+	 * @param {signalInstance=} signal signalInstance for passed in value (auto-created)
+	 * @param {boolean=} useWeakRef Use WeakRef - defaults to false here, and true on every deep/further signalProxy
+	 * @returns {any} Proxy of passed in value
+	 */
 	proxySignal(value,signal=null,useWeakRef=false){
 		if(value!==Object(value)) throw new TypeError("proxySignal root value must not be a primitive");
 		return new signalProxy(value,this,signal,useWeakRef);
 	}
 	
+	/**
+	 * Create signalProxy which creates a signalInstance & signalProxy for every property accessed. Infinitely deep.
+	 * Also, define a getter/setter on the target object.
+	 * @param {object} obj Target Object
+	 * @param {string} prop Property Name
+	 * @param {any=} value Signal Value
+	 * @param {signalInstance=} signal signalInstance for passed in value (auto-created)
+	 * @returns {any} Proxy of passed in value
+	 */
 	defineProxySignal(obj,prop,value,signal=null){
 		if(value!==Object(value)) throw new TypeError("defineProxySignal root value must not be a primitive, try defineSignal instead");
 		if(!signal) signal = new signalInstance(this,value);
@@ -355,6 +414,7 @@ export class signalProxy {
 export const signalSymb = Symbol('$signalInstance');
 export class signalInstance {
 	
+	/** @type {signalController} */
 	#ctrl;
 	#_value; #_promise; #useWeakRef=false; #isObject=false;
 	#isGetting=true;
@@ -380,6 +440,12 @@ export class signalInstance {
 	/** Listen callbacks for each get (excluding getSilent) */
 	addPullListener(fn){ this.#pullListeners.add(fn); }
 	
+	/**
+	 * Subscribe to updates, directly to this Signal only
+	 * @param {Function} fn Listener callback
+	 * @param {boolean} defer Defer (Promise.then) listener execution
+	 * @returns {signalObserver} Signal Observer only for this listener
+	 */
 	subscribe(fn,defer=this.#ctrl?.scopeDomInstance?.options?.signalDefer){
 		defer = defer===true || defer===void 0;
 		let obs = this.#ctrl.createObserver({ defer });
@@ -438,6 +504,13 @@ export class signalInstance {
 	}
 }
 
+/**
+ * Resolve (& record) a signalProxy to it's signalInstance
+ * @param {signalProxy|signalInstance|any} value Value
+ * @param {signalObserver=} signalObs Signal Observer
+ * @param {boolean=} strict Return null if result isn't a signalInstance
+ * @returns {signalInstance|null} If strict, resolved signalInstance or null. Else resolved signalInstance or passed value.
+ */
 export const resolveSignal = function(value,signalObs=null,strict=false){
 	if(signalProxy._isProxy(value)) value = signalProxy._getProxySignal(value);
 	if(value instanceof signalInstance){

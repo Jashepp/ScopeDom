@@ -25,6 +25,7 @@ const disableDocumentDefaultView = ()=>{
 	catch(e){ console.warn("scopeDom: Failed to disable document.defaultView\n",e); }
 }
 
+/** @template {object} scopeDomInitOptions */
 const initOptionsDefaults = {
 	dev: true, // Verbose developer logging
 	attribRegexMatch: /^\$((?:[\w\d]+)(?:\-[\w\d]+)*?)(?:\:((?:[\w\d]+)(?:\-[\w\d]+)*?))?$/, // group1: name, group2: option
@@ -33,10 +34,12 @@ const initOptionsDefaults = {
 	globalContext: true,
 	documentContext: true,
 	documentDefaultView: false,
+	/** @type {scopeBase|object|null} */
 	scope: null,
 	attributeAliases: null,
 	attributeAliasNameKeys: null,
 	autoReady: true,
+	/** @type {HTMLElement|null} */
 	element: null,
 	onlyInstance: true, // Prevent further instances
 	privateInstance: false, // Enforces use of direct instance reference & prevent late plugins
@@ -46,30 +49,66 @@ const initOptionsDefaults = {
 };
 let initOptionsScriptTag = null;
 
+/** @template {object} scopeElementAttrib */
 const scopeElementAttribDefaults = {
 	isDefault: true,
+	/** @type {string|null} */
 	attribute: null,
+	/** @type {string|null} */
 	nameKey: null,
+	/** @type {string|null} */
 	nameParts: null,
+	/** @type {string|null} */
 	value: null,
+	/** @type {Map<string,scopeElementAttribOption>|null} */
 	options: null,
 };
+/** @template {object} scopeElementAttribOption */
 const scopeElementAttribOptionDefaults = {
 	isDefault: false,
+	/** @type {string|null} */
 	attribute: null,
+	/** @type {string|null} */
 	nameKey: null,
+	/** @type {Array<string>|null} */
 	optionParts: null,
+	/** @type {string|null} */
 	value: null
 };
 
+/** @type {Set<scopeDom>} */
 const allInstances = new Set();
 
+/** @type {scopeDom|null} */
 let mainInstance = null;
 
+/** @type {scopeDom|null} */
 let onlyInstance = null;
 
+/** @type {Set<object|Function>|null} */
 let pluginsPostMain = null;
 
+/**
+ * @typedef scopeDomCtrlCallbackObj
+ * @prop {Proxy|object|any} scope
+ * @prop {scopeDom} instance
+ * @prop {scopeController} controller
+ * @prop {typeof scopeController.prototype.$signal} signal
+ * @prop {typeof signalController.prototype.createSignal} createSignal
+ * @prop {typeof signalController.prototype.defineSignal} defineSignal
+ * @prop {typeof signalController.prototype.assignSignals} assignSignals
+ * @prop {typeof signalController.prototype.computeSignal} computeSignal
+ * @prop {typeof signalController.prototype.proxySignal} proxySignal
+ * @prop {typeof signalController.prototype.defineProxySignal} defineProxySignal
+ */
+
+/**
+ * @callback scopeDomCtrlCallback
+ * @param {scopeDomCtrlCallbackObj} detailsObject
+ * @returns {void}
+ */
+
+/** @class scopeDom */
 class scopeDom {
 	
 	static setupScriptTag(){
@@ -102,22 +141,46 @@ class scopeDom {
 			}
 		}
 	}
+	
+	/**
+	 * @static
+	 * @param {scopeDomInitOptions|object|null} initOptions
+	 * @returns {scopeDom}
+	 * @throws {Error}
+	 */
 	static init(initOptions={}){
 		if(mainInstance) throw new Error("scopeDom: main instance is already initialised");
 		let instance = new scopeDom(initOptions);
 		return instance.beginDomWatching(), instance;
 	}
 	
+	/**
+	 * @static
+	 * @returns {scopeDom}
+	 * @throws {Error}
+	 */
 	static getInstance(){
 		if(!mainInstance) throw new Error("scopeDom: no main instance, use scopeDom.init");
 		if(mainInstance.options.privateInstance) throw new Error("scopeDom: main instance is private, directly reference that instance instead");
 		return mainInstance;
 	}
 	
+	/**
+	 * Define scope controller on main scopeDom instance
+	 * @static
+	 * @param {Function|string|null=} name Scope Controller Name
+	 * @param {scopeDomCtrlCallback=} fn Scope Controller Function
+	 * @returns {scopeDom} scopeDom instance
+	 */
 	static controller(name,fn){
 		return scopeDom.getInstance().controller(name,fn);
 	}
 	
+	/**
+	 * @param {object|Function} plugin
+	 * @returns {boolean}
+	 * @throws {Error}
+	 */
 	static pluginAdd(plugin){
 		if(mainInstance && !mainInstance.options.allowLatePlugins) throw new Error("scopeDom: late plugin adding is disabled, due to main instance { allowLatePlugins:false }");
 		for(let inst of allInstances){
@@ -126,6 +189,10 @@ class scopeDom {
 		return true;
 	}
 	
+	/**
+	 * @constructor
+	 * @param {scopeDomInitOptions|object|null} initOptions
+	 */
 	constructor(initOptions={}){
 		if(onlyInstance) throw new Error("scopeDom: a private instance is already initialised");
 		initOptions = { __proto__:null, ...initOptionsScriptTag, ...initOptions };
@@ -137,8 +204,11 @@ class scopeDom {
 		if(!mainInstance) mainInstance = this;
 		allInstances.add(this);
 		let scope = options.scope===Object(options.scope) ? options.scope : new scopeBase();
+		/** @type {scopeDomInitOptions} */
 		this.options = options;
+		/** @type {HTMLElement|null} */
 		this.mainElement = options.element || null;
+		/** @type {scopeController} */
 		this.scopeCtrl = new scopeController(scope,null,null,false,this);
 		this.namedControllers = new Map();
 		this.cacheWatchObservers = new Map();
@@ -166,6 +236,9 @@ class scopeDom {
 		Object.freeze(this.options);
 	}
 	
+	/**
+	 * Start a MutationObserver to observe for changes on the DOM
+	 */
 	beginDomWatching(){
 		let mutObs=null, onMainElement=()=>{
 			if(!this.mainElement) this.mainElement=document.body;
@@ -186,6 +259,12 @@ class scopeDom {
 	}
 	
 	// Scope Handling
+	/**
+	 * Define scope controller
+	 * @param {Function|string|null=} name Scope Controller Name
+	 * @param {scopeDomCtrlCallback=} fn Scope Controller Function
+	 * @returns {scopeDom} scopeDom instance
+	 */
 	controller(name,fn){
 		if(typeof name==="function") return this.controller(null,name);
 		if(name===null || name===false || name===void 0) name = null;
@@ -268,17 +347,31 @@ class scopeDom {
 			for(const cb of list) try{ cb(); }catch(err){ console.error(err); }
 		}
 	}
+	/**
+	 * Listen for when the DOM is first interactive or complete
+	 * @param {Function} cb Callback
+	 * @param {boolean=} delay Defer microtask or run instantly
+	 */
 	onReady(cb,delay=true){
 		if(this.onReadyListeners) this.onReadyListeners.add(cb);
 		else if(delay) deferFn(cb);
 		else cb();
 	}
+	/**
+	 * Listen for when the DOM is complete
+	 * @param {Function} cb Callback
+	 * @param {boolean=} delay Defer microtask or run instantly
+	 */
 	onDOMReady(cb,delay=true){
 		if(this.onDOMReadyListeners) this.onDOMReadyListeners.add(cb);
 		else if(delay) deferFn(cb);
 		else cb();
 	}
 	
+	/**
+	 * @param {HTMLElement} element
+	 * @param {Function} cb
+	 */
 	onElementLoaded(element,cb){
 		if(isElementLoaded(element)) try{ cb(); }catch(err){ console.error(err); }
 		else {
@@ -286,6 +379,10 @@ class scopeDom {
 			this.pendingOnElementLoaded.get(element).add(cb);
 		}
 	}
+	/**
+	 * @param {HTMLElement} element
+	 * @param {boolean=} checkParents
+	 */
 	isElementIgnored(element,checkParents=false){
 		for(let e=element; e; e=checkParents?e.parentNode:null){
 			if(this.ignoreNodes.has(e)) return true;
@@ -298,6 +395,10 @@ class scopeDom {
 	}
 	
 	// Element Connection
+	/**
+	 * Connect elements
+	 * @param {HTMLElement} element
+	 */
 	connectElementAndChildren(element,act=true,list=new Set(),checkIgnoreParents=false){ // Connect parent before children
 		if(element.nodeType===commentNodeType){ this.connectElement(element); return; }
 		if(element.nodeType!==elementNodeType || element.nodeName==='SCRIPT' || element.nodeName==='STYLE') return;
@@ -306,12 +407,20 @@ class scopeDom {
 		if(element.childNodes && element.nodeName!=='TEMPLATE' && element.nodeName!=='svg' && !element.shadowRoot) for(let e of [...element.childNodes]) this.connectElementAndChildren(e,false,list);
 		if(act) for(let e of list.values()) if(e.isConnected) this.connectElement(e);
 	}
+	/**
+	 * Disconnect Elements
+	 * @param {HTMLElement} element
+	 */
 	disconnectElementAndChildren(element,act=true,list=new Set()){ // Disconnect children before parent
 		if(this.isElementIgnored(element,true)) return;
 		if(element.childNodes) for(let e of [...element.childNodes]) this.disconnectElementAndChildren(e,false,list);
 		list.add(element);
 		if(act) for(let e of list.values()) if(!e.isConnected) this.disconnectElement(e);
 	}
+	/**
+	 * Connect Specific Element
+	 * @param {HTMLElement} element
+	 */
 	connectElement(element){
 		if(this.pendingConnectNodes.has(element) && !isElementLoaded(element,true)) return;
 		if(element!==this.mainElement && !isElementLoaded(element,true)){ this.pendingConnectNodes.add(element); return; }
@@ -320,6 +429,10 @@ class scopeDom {
 		this.pendingConnectNodes.delete(element);
 		this.triggerElementConnect(element);
 	}
+	/**
+	 * Disconnect Specific Element
+	 * @param {HTMLElement} element
+	 */
 	disconnectElement(element){
 		if(!this.cacheConnectedNodes.has(element)){ this.cleanupDisconnected(element); return; }
 		this.triggerElementDisconnect(element);
@@ -334,6 +447,10 @@ class scopeDom {
 	}
 	
 	// Attrib Handling
+	/**
+	 * @param {HTMLElement} element
+	 * @returns {Map<string,scopeElementAttrib>|null}
+	 */
 	elementAttribs(element,useCache=true,checkConnected=true){
 		if(checkConnected && (!this.cacheConnectedNodes.has(element) || !element.isConnected)) return null;
 		if(useCache && this.cacheElementAttribs.has(element)) return this.cacheElementAttribs.get(element);
@@ -362,6 +479,11 @@ class scopeDom {
 		if(useCache && attribs.size>0) this.cacheElementAttribs.set(element,attribs);
 		return attribs;
 	}
+	
+	/**
+	 * @param {HTMLElement} element
+	 * @returns {Map<string,scopeElementAttrib>|null}
+	 */
 	elementFindDefaults(element,useCache=true,checkConnected=true){
 		if(checkConnected && (!this.cacheConnectedNodes.has(element) || !element.isConnected)) return null;
 		if(useCache && this.cacheElementAttribsDefaults.has(element)) return this.cacheElementAttribsDefaults.get(element);
@@ -385,6 +507,12 @@ class scopeDom {
 		if(useCache && defaults.size>0) this.cacheElementAttribsDefaults.set(element,defaults);
 		return defaults;
 	}
+	
+	/**
+	 * @param {HTMLElement} element
+	 * @param {scopeElementAttrib} attrib
+	 * @returns {scopeElementAttribOption}
+	 */
 	elementAttribOptionsWithDefaults(element,attrib,useCache=true,checkConnected=true){
 		let { nameKey, nameParts, options } = attrib;
 		if(nameParts[0]!=='default'){
@@ -393,6 +521,12 @@ class scopeDom {
 		}
 		return options;
 	}
+	
+	/**
+	 * @param {scopeElementAttrib} attrib
+	 * @param {Array<string>|Set<string>|null} whitelist
+	 * @returns {string|null}
+	 */
 	elementAttribFallbackOptionValue(attrib,whitelist=null,updateOption=true,updateAttrib=true){
 		let { options, attribute, value } = attrib;
 		if(whitelist instanceof Array) whitelist = new Set(whitelist);
@@ -411,6 +545,13 @@ class scopeDom {
 		}
 		return value;
 	}
+	
+	/**
+	 * @param {HTMLElement} element
+	 * @param {Map<string,scopeElementAttribOption>} attribOpts
+	 * @param {string} optName
+	 * @param {object|any} parseOptions
+	 */
 	elementAttribParseOption(element,attribOpts,optName,parseOptions={}){
 		parseOptions = { __proto__:null, default:null, emptyTrue:false, runExp:false, ...parseOptions };
 		let optValue = parseOptions.default, opt = attribOpts.get(optName), isDefault = opt?.isDefault;
@@ -424,6 +565,9 @@ class scopeDom {
 	}
 	
 	// New Scope Controller
+	/**
+	 * @param {HTMLElement} element
+	 */
 	elementNewScopeCtrl(element,newScope=void 0,parentScopeCtrl=this.scopeCtrl,insertCache=true){
 		if(parentScopeCtrl instanceof scopeElementController) parentScopeCtrl = parentScopeCtrl.ctrl;
 		let scopeCtrl = new scopeController(newScope,parentScopeCtrl.eventTarget,parentScopeCtrl,false,this);
@@ -431,6 +575,9 @@ class scopeDom {
 		if(insertCache) this.cacheElementScopeCtrls.set(element,elementScopeCtrl);
 		return elementScopeCtrl;
 	}
+	/**
+	 * @param {HTMLElement} element
+	 */
 	elementNewIsolatedScopeCtrl(element,newScope=void 0,parentScopeCtrl=this.scopeCtrl,insertCache=true){
 		if(parentScopeCtrl instanceof scopeElementController) parentScopeCtrl = parentScopeCtrl.ctrl;
 		let scopeCtrl = new scopeController(newScope,null,parentScopeCtrl,true,this);
@@ -438,8 +585,13 @@ class scopeDom {
 		if(insertCache) this.cacheElementScopeCtrls.set(element,elementScopeCtrl);
 		return elementScopeCtrl;
 	}
+	/**
+	 * @param {HTMLElement} toElement
+	 * @param {HTMLElement} fromElement
+	 */
 	elementScopeSetAlias(toElement,fromElement){
 		// Element Scopes
+		//let fromScopeList = this.elementExtraScopes.get(fromElement);
 		let toScopeList = this.elementExtraScopes.get(toElement);
 		if(!toScopeList) this.elementExtraScopes.set(toElement,[fromElement]);
 		else if(toScopeList.indexOf(fromElement)===-1) toScopeList.push(fromElement);
@@ -457,6 +609,12 @@ class scopeDom {
 	}
 	
 	// Find Scope Controller
+	/**
+	 * @param {HTMLElement} element
+	 * @param {boolean} useCache
+	 * @param {boolean} findParent
+	 * @param {scopeBase|object|null} newScope
+	 */
 	elementScopeCtrl(element,useCache=true,findParent=true,newScope=null){
 		if(useCache && this.cacheElementScopeCtrls.has(element)) return this.cacheElementScopeCtrls.get(element);
 		let parentCtrl = findParent ? this.elementFindParentScopeCtrl(element) : null;
@@ -466,6 +624,9 @@ class scopeDom {
 		if(useCache) this.cacheElementScopeCtrls.set(element,ctrl);
 		return ctrl;
 	}
+	/**
+	 * @param {HTMLElement} element
+	 */
 	elementFindParentScopeCtrl(element){
 		for(let e=element; e; e=e.parentNode){
 			if(!this.cacheConnectedNodes.has(e) && element.nodeType!==textNodeType) return;
@@ -474,6 +635,12 @@ class scopeDom {
 	}
 	
 	// Execute Expression on Element
+	/**
+	 * @param {scopeElementController} elementScopeCtrl
+	 * @param {string} expression
+	 * @param {object|null} extra
+	 * @param {object=} options
+	 */
 	elementExecExp(elementScopeCtrl,expression,extra=null,options={}){
 		let extraScopes = extra?[extra]:[], elementScopes = this.getElementScopes(elementScopeCtrl.element);
 		let { globalContext, documentContext, signalProxyAll } = this.options;
@@ -481,6 +648,10 @@ class scopeDom {
 		return elementScopeCtrl.execElementExpression(expression,extraScopes,elementScopes,options);
 	}
 	// Get Element Scopes [[element,scopesArr],...]
+	/**
+	 * @param {HTMLElement} element
+	 * @param {Array<object>} eScopes
+	 */
 	getElementScopes(element,eScopes=[]){
 		for(let e=element; e; e=e.parentNode){
 			let isolated = this.elementIsolatedScopes.has(e) ? e : null;
@@ -489,6 +660,13 @@ class scopeDom {
 		}
 		return eScopes;
 	}
+	/**
+	 * @param {HTMLElement} key
+	 * @param {HTMLElement|null} isolated
+	 * @param {Set<HTMLElement>} uniqueKeys
+	 * @param {Array<object>} list
+	 * @returns {Array<object>}
+	 */
 	resolveElementScopes(key,isolated=null,uniqueKeys=new Set([key]),list=[]){
 		let arr = this.elementExtraScopes.get(key), isolatedParent = isolated?.parentNode;
 		for(let i=0,l=arr.length; i<l; i++){
@@ -510,11 +688,18 @@ class scopeDom {
 	}
 	
 	// Handle connect & disconnect
+	/**
+	 * @param {HTMLElement} element
+	 * @param {Function} removeListener
+	 */
 	registerElementRelatedEvent(element,removeListener){
 		let map = this.elementRelatedEventListeners;
 		if(!map.has(element)) map.set(element,new Set());
 		map.get(element).add(removeListener);
 	}
+	/**
+	 * @param {HTMLElement} element
+	 */
 	removeElementRelatedEvents(element){
 		let map = this.elementRelatedEventListeners;
 		if(map.has(element)){
@@ -524,6 +709,9 @@ class scopeDom {
 		}
 	}
 	
+	/**
+	 * @param {HTMLElement} element
+	 */
 	triggerElementConnect(element){
 		let attribs = this.elementAttribs(element), elementScopeCtrl, queue=[];
 		if(attribs && attribs.size>0){
@@ -644,6 +832,9 @@ class scopeDom {
 						let raf = options.get('raf'), instant = options.get('instant'), pd = options.get('pd');
 						if(value?.length>0){
 							let self=this, { runFn:eventCB, firstScope } = this.elementExecExp(elementScopeCtrl,value,{ __proto__:null, $attribute },{ __proto__:null, run:false });
+							/**
+							 * @param {{ preventDefault: () => void; }} event
+							 */
 							function eventListener(event){
 								if(pd) event.preventDefault();
 								firstScope.$event = event;
@@ -667,6 +858,9 @@ class scopeDom {
 		this.pluginsOnConnect(new pluginOnElementPlug(this,element,elementScopeCtrl,attribs));
 	}
 	
+	/**
+	 * @param {HTMLElement} element
+	 */
 	triggerElementDisconnect(element){
 		if(!this.cacheConnectedNodes.has(element)) return;
 		let attribs = this.elementAttribs(element,true,false), elementScopeCtrl;
@@ -696,6 +890,9 @@ class scopeDom {
 		// Run plugins onDisconnect
 		this.pluginsOnDisconnect(new pluginOnElementPlug(this,element,elementScopeCtrl,attribs));
 	}
+	/**
+	 * @param {WeakKey} element
+	 */
 	cleanupDisconnected(element,completely=false){
 		if(this.cacheElementAttribs.has(element)) this.cacheElementAttribs.delete(element);
 		if(this.cacheElementAttribsDefaults.has(element)) this.cacheElementAttribsDefaults.delete(element);
@@ -711,6 +908,9 @@ class scopeDom {
 	}
 	
 	// Plugins & Middleware
+	/**
+	 * @param {{ onConnect:Function, onDisconnect:Function, onPluginAdd:Function }|Function} plugin
+	 */
 	pluginAdd(plugin){
 		if(!this.options.allowLatePlugins) throw console.log(this.options), new Error("scopeDom: late plugin adding is disabled, due to instance { allowLatePlugins:false }");
 		let plugins=this.plugins, register=plugins.register;
@@ -733,15 +933,28 @@ class scopeDom {
 		for(let plugin of pluginsPostMain||Object.values(window.scopeDomPlugins||[])||[]) this.pluginAdd(plugin);
 		this.plugins.init=true;
 	}
+	/**
+	 * @param {pluginOnElementPlug} plugObj
+	 */
 	pluginsOnConnect(plugObj){
 		for(let pluginOnConnect of this.plugins.onConnect) try{ pluginOnConnect(plugObj); }catch(err){ console.error(err); }
 	}
+	/**
+	 * @param {pluginOnElementPlug} plugObj
+	 */
 	pluginsOnDisconnect(plugObj){
 		for(let pluginOnDisconnect of this.plugins.onDisconnect) try{ pluginOnDisconnect(plugObj); }catch(err){ console.error(err); }
 	}
+	/**
+	 * @param {pluginOnElementPlug} plugObj
+	 */
 	pluginsOnPluginAdd(plugObj){
 		for(let pluginOnPluginAdd of this.plugins.onPluginAdd) try{ pluginOnPluginAdd(plugObj); }catch(err){ console.error(err); }
 	}
+	/**
+	 * @param {{ onConnect:Function }} plugin
+	 * @param {HTMLElement} element
+	 */
 	latePluginAdd_runConnect(plugin,element,act=true,list=new Set()){
 		if(!plugin || !this.plugins.init || !this.cacheConnectedNodes.has(element)) return;
 		list.add(element);
@@ -760,6 +973,12 @@ class scopeDom {
 }
 
 class pluginOnElementPlug {
+	/**
+	 * @param {scopeDom} instance
+	 * @param {HTMLElement} element
+	 * @param {scopeElementController} elementScopeCtrl
+	 * @param {Map<string,scopeElementAttrib>} attribs
+	 */
 	constructor(instance,element,elementScopeCtrl,attribs){
 		this.instance = instance;
 		this.element = element;
