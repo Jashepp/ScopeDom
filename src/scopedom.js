@@ -42,7 +42,7 @@ const initOptionsDefaults = {
 	privateInstance: false, // Enforces use of direct instance reference & prevent late plugins
 	allowLatePlugins: true, // Prevent pluginAdd after scopeDom init (defaults to false on privateInstance)
 	signalDefer: true,
-	signalProxyAll: false,
+	signalProxyAll: true,
 };
 let initOptionsScriptTag = null;
 

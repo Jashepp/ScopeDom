@@ -26,7 +26,7 @@ const execExpOptionsDefaults = {
 	run: true,
 	scopeUseOwn: null,
 	scopeCtrl: null,
-	useSignalProxy: false
+	useSignalProxy: true
 };
 
 export class execExpression {
