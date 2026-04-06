@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "description": "[Experimental] Declarative HTML logic & behaviour, with hierarchical scoping",
   "type": "module",
-  "module": "./core/scopedom.js",
+  "module": "./src/scopedom.js",
   "directories": {
     "test": "tests"
   },
