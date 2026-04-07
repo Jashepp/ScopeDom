@@ -15,6 +15,8 @@ import {
 	scopeExpressionContext, scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
 } from "./scope.js";
 
+const frozenNullObj=Object.freeze(Object.create(null));
+
 /**
  * @template {object} execExpOptions
  */
@@ -109,11 +111,27 @@ export class execExpression {
 	
 }
 
-const frozenNullObj=Object.freeze(Object.create(null));
+/**
+ * @template {object} execExpProxyDefaults
+ */
+const execExpProxyDefaults = {
+	mainScopes: null,
+	getScopes: null,
+	setScopes: null,
+	scopeUseOwn: null,
+	silentHas: true,
+	globalObj: null,
+	globalsHide: null,
+	globalCatch: null,
+	scopeCtrl: null,
+	useSignalProxy: true,
+	unscopables: frozenNullObj,
+};
+
 export class execExpressionProxy {
 	
 	constructor(obj){
-		obj = { __proto__:null, mainScopes:null, getScopes:null, setScopes:null, scopeUseOwn:null, silentHas:true, globalObj:null, globalsHide:null, globalCatch:null, scopeCtrl:null, useSignalProxy:false, unscopables:frozenNullObj, ...obj };
+		obj = { __proto__:null, ...execExpProxyDefaults, ...obj };
 		if(!obj.scopeUseOwn) obj.scopeUseOwn = new WeakSet();
 		return new Proxy(obj,execExpressionProxy);
 	}
