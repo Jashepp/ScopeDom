@@ -291,7 +291,7 @@ class scopeDom {
 	handleScopeCtrlFn(proxy,fn){
 		let signal = this.scopeCtrl.$signal.bind(this.scopeCtrl); // signal(value) : [get,set,signal]
 		let signalCtrl = this.scopeCtrl.signalCtrl, signalMethods = Object.fromEntries(
-			['createSignal','defineSignal','assignSignals','computeSignal','proxySignal','defineProxySignal']
+			['createSignal','defineSignal','assignSignals','computeSignal','proxySignal','defineProxySignal','preventUpdates','preventObservers']
 			.map(k=>[k,signalCtrl[k].bind(signalCtrl)])
 		);
 		fn.apply(proxy,[{ scope:proxy, instance:this, controller:this.scopeCtrl, signal, ...signalMethods }]);

@@ -174,6 +174,12 @@ export class scopeController {
 	/** @type {typeof signalController.prototype.defineProxySignal} */
 	$defineProxySignal(obj,prop,value){ return this.signalCtrl.defineProxySignal(obj,prop,value); } // proxy
 	
+	/** @type {typeof signalController.prototype.preventUpdates} */
+	$preventSignalUpdates(value,...args){ return this.signalCtrl.preventUpdates(fn,...args); }
+	
+	/** @type {typeof signalController.prototype.preventObservers} */
+	$preventSignalObservers(value,...args){ return this.signalCtrl.preventObservers(fn,...args); }
+	
 }
 
 const seSymb = Symbol('$scopeElementContext');

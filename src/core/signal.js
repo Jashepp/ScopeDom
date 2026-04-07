@@ -18,37 +18,92 @@ import {
 
 export class signalController {
 	
+	#preventUpdates = false;
+	#preventObservers = false;
+	#observersRecording = new Set();
+	#observers = new Set();
+	
 	constructor(scopeCtrl){
 		if(scopeCtrl instanceof scopeElementController) scopeCtrl = scopeCtrl.ctrl;
 		this.scopeCtrl = scopeCtrl;
-		this.observers = new Set();
-		this.observersRecording = new Set();
 	}
 	
-	createObserver(options={}){ let o=new signalObserver(this,options); this.observers.add(o); return o; }
+	createObserver(options={}){ let o=new signalObserver(this,options); this.#observers.add(o); return o; }
 	
 	removeObserver(observer,clear=true){
-		this.observers.delete(observer); this.observersRecording.delete(observer);
+		if(!(observer instanceof signalObserver)) throw new TypeError("removeObserver observer must be a signalObserver");
+		this.#observers.delete(observer); this.#observersRecording.delete(observer);
 		if(clear) observer.clear();
 	}
 	
+	startObserverRecording(observer){
+		if(!(observer instanceof signalObserver)) throw new TypeError("startObserverRecording observer must be a signalObserver");
+		this.#observersRecording.add(observer);
+	}
+	
+	stopObserverRecording(observer){
+		if(!(observer instanceof signalObserver)) throw new TypeError("stopObserverRecording observer must be a signalObserver");
+		this.#observersRecording.delete(observer);
+	}
+	
 	triggerChange(signal,oldValue,newValue){
-		for(let observer of this.observers) if(observer.hasSignal(signal)) observer.triggerChange(signal,oldValue,newValue);
+		if(!(signal instanceof signalInstance)) throw new TypeError("triggerChange signal must be a signalInstance");
+		if(!this.#preventUpdates) for(let observer of this.#observers) if(observer.hasSignal(signal)) observer.triggerChange(signal,oldValue,newValue);
 	}
 	
 	triggerRecording(signal){
-		for(let observer of this.observersRecording) if(!observer.hasSignal(signal)) observer.recordSignal(signal);
+		if(!(signal instanceof signalInstance)) throw new TypeError("triggerRecording signal must be a signalInstance");
+		if(!this.#preventObservers) for(let observer of this.#observersRecording) if(!observer.hasSignal(signal)) observer.recordSignal(signal);
 	}
 	
+	/**
+	 * Prevent existing observers from recording signals.
+	 * However, allow nested observers to record, such as computed pull signals.
+	 * @param {Function} fn Function to run
+	 * @returns The wrapped function
+	 */
 	isolateRecording(fn){
+		if(!(fn instanceof Function)) throw new TypeError("isolateRecording fn must be a Function (callback)");
 		let self = this;
 		return function signalIsolatedRecording(...args){
-			let prev = [...self.observersRecording];
-			self.observersRecording.clear();
+			let prev = [...self.#observersRecording];
+			self.#observersRecording.clear();
 			let result; try{ result=fn(...args); }catch(err){ console.error(err); }
-			for(let observer of prev) self.observersRecording.add(observer);
+			for(let observer of prev) self.#observersRecording.add(observer);
 			return result;
 		};
+	}
+	
+	/**
+	 * Prevent signals from triggering updates to observers during function execution.
+	 * Additional parameters will be passed to the function.
+	 * @param {Function} fn Function to run
+	 * @returns The function's result, or thrown error
+	 */
+	preventUpdates(fn,...args){
+		if(!(fn instanceof Function)) throw new TypeError("preventUpdates fn must be a Function (callback)");
+		let result, error;
+		this.#preventUpdates = true;
+		try{ result=fn(...args); }catch(err){ error=err; }
+		this.#preventUpdates = false;
+		if(error) throw error;
+		return result;
+	}
+	
+	/**
+	 * Prevent observers from recording signals during function execution.
+	 * Additional parameters will be passed to the function.
+	 * @param {Function} fn Function to run
+	 * @returns The function's result, or thrown error
+	 */
+	preventObservers(fn,...args){
+		if(!(fn instanceof Function)) throw new TypeError("preventObservers fn must be a Function (callback)");
+		let result, error;
+		this.#preventObservers = true;
+		try{ result=fn(...args); }catch(err){ error=err; }
+		this.#preventObservers = false;
+		if(error) throw error;
+		return result;
 	}
 	
 	// Signal Helper Methods
@@ -91,7 +146,7 @@ export class signalController {
 	
 	/**
 	 * Create signalInstance & record it immediately to any recording signalObserver.
-	 * Also, for each source property, define a getter/setter on the target object.
+	 * Also, for each source property, define a getter/setter on the target object, as signals.
 	 * @param {object} target Target Object
 	 * @param {object} source Source Object
 	 * @returns {object} Target Object
@@ -108,6 +163,7 @@ export class signalController {
 	 * @returns {Array<signalInstance,signalObserver,Function>} [ signalInstance, signalObserver, clear() ]
 	 */
 	computeSignalPush(fn,options={}){ // [ signal, observer, clear() ]
+		if(!(fn instanceof Function)) throw new TypeError("computeSignalPush fn must be a Function (callback)");
 		let signal = this.createSignal(void 0);
 		let obs = this.createObserver(options);
 		obs.signalsIgnore.add(signal);
@@ -128,6 +184,7 @@ export class signalController {
 	 * @returns {Array<signalInstance,signalObserver,Function>} [ signalInstance, signalObserver, clear() ]
 	 */
 	computeSignalPull(fn,options={}){ // [ signal, observer, clear() ]
+		if(!(fn instanceof Function)) throw new TypeError("computeSignalPull fn must be a Function (callback)");
 		let signal = this.createSignal(void 0);
 		let obs = this.createObserver(options);
 		obs.signalsIgnore.add(signal);
@@ -237,14 +294,14 @@ export class signalObserver {
 	startRecording(){
 		if(this.isRecording) return false;
 		this.isRecording = true;
-		this.ctrl.observersRecording.add(this);
+		this.ctrl.startObserverRecording(this);
 		return true;
 	}
 	
 	stopRecording(){
 		if(!this.isRecording) return false;
 		this.isRecording = false;
-		this.ctrl.observersRecording.delete(this);
+		this.ctrl.stopObserverRecording(this);
 		return true;
 	}
 	
@@ -415,9 +472,8 @@ export const signalSymb = Symbol('$signalInstance');
 export class signalInstance {
 	
 	/** @type {signalController} */
-	#ctrl;
+	#ctrl; #isGetting=true;
 	#_value; #_promise; #useWeakRef=false; #isObject=false;
-	#isGetting=true;
 	#pendingPull=true; #pullListeners=new Set();
 	constructor(signalCtrl,value,useWeakRef=false){
 		this.#ctrl = signalCtrl; this.#useWeakRef = useWeakRef && !!window.WeakRef;
