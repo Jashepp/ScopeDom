@@ -317,7 +317,7 @@ export class signalObserver {
 	
 	addListener(fn){ this.listeners.add(fn); return this.removeListener.bind(this,fn); }
 	removeListener(fn){ this.listeners.delete(fn); }
-	clear(){ this.listeners.clear(); this.signals=new WeakSet(); }
+	clear(){ this.listeners.clear(); this.signals=new WeakSet(); this.ctrl.removeObserver(this,false); }
 	clearSignals(){ this.signals=new WeakSet(); }
 }
 
@@ -497,7 +497,8 @@ export class signalInstance {
 	addPullListener(fn){ this.#pullListeners.add(fn); }
 	
 	/**
-	 * Subscribe to updates, directly to this Signal only
+	 * Subscribe to updates, directly to this Signal only.
+	 * If this listener is no longer needed, be sure to run observer.clear()
 	 * @param {Function} fn Listener callback
 	 * @param {boolean} defer Defer (Promise.then) listener execution
 	 * @returns {signalObserver} Signal Observer only for this listener
