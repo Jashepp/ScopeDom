@@ -28,8 +28,8 @@ const disableDocumentDefaultView = ()=>{
 /** @template {object} scopeDomInitOptions */
 const initOptionsDefaults = {
 	dev: true, // Verbose developer logging
-	attribRegexMatch: /^\$((?:[\w\d]+)(?:\-[\w\d]+)*?)(?:\:((?:[\w\d]+)(?:\-[\w\d]+)*?))?$/, // group1: name, group2: option
-	attribRegexParts: /([\w\d]+)/g,
+	attribRegexMatch: /^\$((?:[\.\w\d]+)(?:\-[\.\w\d]+)*?)(?:\:((?:[\.\w\d]+)(?:\-[\.\w\d]+)*?))?$/, // group1: name, group2: option
+	attribRegexParts: /([\.\w\d]+)/g,
 	attribIgnore: '$ignore',
 	globalContext: true,
 	documentContext: true,
@@ -710,6 +710,26 @@ class scopeDom {
 	}
 	
 	/**
+	 * Gets signal for given expression. If it doesnt exist, create one.
+	 * Useful for making sure a variable exists, to be usable elsewhere.
+	 * Returns { signal, expFn } - expFn is an expression function that returns the expression's result
+	 * @param {Element} element Element for elementScopeController instance
+	 * @param {string} key Expression (scope variable name)
+	 */
+	ensureExpressionSignal(element,key){
+		let elementScopeCtrl = this.elementScopeCtrl(element);
+		let { runFn:expFn } = this.elementExecExp(elementScopeCtrl,`${key}`,null,{ __proto__:null, run:false, useReturn:true, useSignalProxy:true });
+		let signal = resolveSignal(expFn(),null,true);
+		if(!signal){
+			signal = this.scopeCtrl.signalCtrl.createSignal();
+			let { runFn } = this.elementExecExp(elementScopeCtrl,`${key}=$$signal`,null,{ __proto__:null, run:false, useReturn:true, useSignalProxy:true, argument:'$$signal' });
+			let result = runFn(signal);
+			if(result!==signal) signal = null;
+		}
+		return { signal, expFn };
+	}
+	
+	/**
 	 * @param {HTMLElement} element
 	 */
 	triggerElementConnect(element){
@@ -807,6 +827,35 @@ class scopeDom {
 						let removeListener = elementScopeCtrl.ctrl.$on(evt,()=>updateCB(),{},true);
 						this.registerElementRelatedEvent(element,removeListener);
 						continue;
+					}
+				}
+				// Signal Attribute (lowercase keys)
+				if(nameParts.length===2){
+					let [ name, key ] = nameParts;
+					if(name==='signal' && key?.length>0){
+						let { attribute:$attribute } = attrib, watchOpt = options.get('watch'), computeOpt = options.get('compute');
+						// Watch Signal
+						let watchValue = watchOpt?.value?.length>0 ? watchOpt.value : value;
+						if(watchValue?.length>0 && !watchOpt.isDefault && (!computeOpt || computeOpt?.value!==watchValue)){
+							let { signal, expFn } = this.ensureExpressionSignal(element,key);
+							if(signal){
+								let obs = this.scopeCtrl.signalCtrl.createObserver(); obs.recordSignal(signal);
+								let oldValue, extra = { __proto__:null, $attribute, get $value(){ return signal?.get(); }, get $oldValue(){ return oldValue; } };
+								let { runFn:watchFn } = this.elementExecExp(elementScopeCtrl,watchValue,extra,{ __proto__:null, run:false });
+								watchFn = obs.wrapRecorder(watchFn);
+								obs.addListener(function attribSignalWatchValue(obs,s,o){ oldValue=o; watchFn(); });
+								this.registerElementRelatedEvent(element,obs.clear.bind(obs));
+							}
+						}
+						// Compute Signal
+						if(computeOpt?.value?.length>0 && !computeOpt.isDefault){
+							let { signal } = this.ensureExpressionSignal(element,key);
+							if(signal){
+								let { runFn:computeFn } = this.elementExecExp(elementScopeCtrl,computeOpt.value,{ __proto__:null, $attribute },{ __proto__:null, run:false, useReturn:true });
+								let [ _, obs, clear ] = this.scopeCtrl.signalCtrl.computeSignal(function attribSignalCompute(){ return resolveSignal(computeFn()); },{ pull:true, signal });
+								this.registerElementRelatedEvent(element,clear);
+							}
+						}
 					}
 				}
 				// Events

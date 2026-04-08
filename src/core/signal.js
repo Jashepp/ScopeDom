@@ -113,7 +113,7 @@ export class signalController {
 	 * @param {boolean=} useWeakRef Use WeakRef
 	 * @returns {signalInstance}
 	 */
-	createSignal(value,useWeakRef=false){
+	createSignal(value=void 0,useWeakRef=false){
 		if(value instanceof Array) throw new TypeError("createSignal value is an Array, use proxySignal instead");
 		if(value instanceof Map) throw new TypeError("createSignal value is a Map, use proxySignal instead");
 		if(value instanceof Set) throw new TypeError("createSignal value is a Set, use proxySignal instead");
@@ -164,13 +164,13 @@ export class signalController {
 	 */
 	computeSignalPush(fn,options={}){ // [ signal, observer, clear() ]
 		if(!(fn instanceof Function)) throw new TypeError("computeSignalPush fn must be a Function (callback)");
-		let signal = this.createSignal(void 0);
+		let signal = options?.signal || this.createSignal(void 0);
 		let obs = this.createObserver(options);
 		obs.signalsIgnore.add(signal);
 		let recordingFn = this.isolateRecording(obs.wrapRecorder(fn));
-		let runFn = function signalComputePushFn(obs,trigger){
+		let runFn = function signalComputePushFn(){
 			obs.clearSignals();
-			signal.set(recordingFn(trigger));
+			signal.set(recordingFn());
 		};
 		obs.addListener(runFn);
 		try{ runFn(obs,null); } catch(err){ console.error(err); }
@@ -185,16 +185,15 @@ export class signalController {
 	 */
 	computeSignalPull(fn,options={}){ // [ signal, observer, clear() ]
 		if(!(fn instanceof Function)) throw new TypeError("computeSignalPull fn must be a Function (callback)");
-		let signal = this.createSignal(void 0);
+		let signal = options?.signal || this.createSignal(void 0);
 		let obs = this.createObserver(options);
 		obs.signalsIgnore.add(signal);
 		let isUpdating = false;
-		let markChanged = signal.markChanged.bind(signal);
 		let updateFn = function signalUpdate(){
 			if(isUpdating) return;
 			isUpdating = true;
 			signal.invalidatePull();
-			markChanged();
+			signal.markChanged();
 			isUpdating = false;
 		};
 		let recordingFn = this.isolateRecording(obs.wrapRecorder(fn));
@@ -202,8 +201,7 @@ export class signalController {
 			obs.clearSignals();
 			signal.set(recordingFn());
 		});
-		obs.addListener(updateFn);
-		signal.invalidatePull();
+		obs.addListener(updateFn); updateFn();
 		return [ signal, obs, obs.clear.bind(obs) ];
 	}
 	
@@ -321,6 +319,8 @@ export class signalObserver {
 	clearSignals(){ this.signals=new WeakSet(); }
 }
 
+if(Symbol.dispose) signalObserver.prototype[Symbol.dispose] = signalObserver.prototype.clear;
+
 const spProxyMap = new WeakMap(), spTargetMap = new WeakMap();
 export class signalProxy {
 	
@@ -384,10 +384,13 @@ export class signalProxy {
 	
 	static _handleTypesGet(obj,prop,getValue){
 		let { target, targetSignal, signalCtrl, isIterable } = obj;
-		if(isIterable && targetSignal && prop*1>=0) targetSignal.record();
-		if(isIterable && targetSignal && target instanceof Array && prop==='length') targetSignal.record();
-		if(isIterable && targetSignal && target instanceof Map && prop==='size') targetSignal.record();
-		if(isIterable && targetSignal && target instanceof Set && prop==='size') targetSignal.record();
+		if(isIterable && targetSignal){
+			if(target instanceof Array && prop===Symbol.iterator) targetSignal.record();
+			else if(prop*1>=0) targetSignal.record();
+			else if(target instanceof Array && prop==='length') targetSignal.record();
+			else if(target instanceof Map && prop==='size') targetSignal.record();
+			else if(target instanceof Set && prop==='size') targetSignal.record();
+		}
 		if(typeof getValue!=='function') return [ getValue, false ];
 		let wrapRecordFn, wrapChangeFn;
 		if(target instanceof Object && prop==='valueOf') wrapRecordFn = true;
@@ -565,14 +568,14 @@ export class signalInstance {
  * Resolve (& record) a signalProxy to it's signalInstance
  * @param {signalProxy|signalInstance|any} value Value
  * @param {signalObserver=} signalObs Signal Observer
- * @param {boolean=} strict Return null if result isn't a signalInstance
- * @returns {signalInstance|null} If strict, resolved signalInstance or null. Else resolved signalInstance or passed value.
+ * @param {boolean=} strict Only return signalInstance or null, not the value
+ * @returns {signalInstance|null} If strict, resolved signalInstance or null. Else resolved signalInstance value or passed value.
  */
 export const resolveSignal = function(value,signalObs=null,strict=false){
 	if(signalProxy._isProxy(value)) value = signalProxy._getProxySignal(value);
 	if(value instanceof signalInstance){
 		if(signalObs) signalObs.recordSignal(value);
-		value = value.get();
+		if(!strict) value = value.get();
 	}
 	if(strict && !(value instanceof signalInstance)) return null;
 	return value;

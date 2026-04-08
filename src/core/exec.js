@@ -21,8 +21,10 @@ const frozenNullObj=Object.freeze(Object.create(null));
  * @template {object} execExpOptions
  */
 const execExpOptionsDefaults = {
+	argument: null,
 	useReturn: false,
 	fnThis: null,
+	fnRaw: false,
 	strictMode: true,
 	useAsync: false,
 	silentHas: true,
@@ -78,18 +80,19 @@ export class execExpression {
 	static buildExp(expression,mainScopes,extraScopes=[],options={}){
 		if(expression!==String(expression)) throw new Error("Invalid expression: "+expression);
 		options = { __proto__:null, ...execExpOptionsDefaults, ...options };
-		let { fnThis, useAsync, scopeUseOwn, silentHas, globalsHide, throwGlobals, scopeCtrl, useSignalProxy } = options;
+		let { fnThis, useAsync, scopeUseOwn, silentHas, globalsHide, throwGlobals, scopeCtrl, useSignalProxy, argument, fnRaw } = options;
 		useAsync = options.useAsync = useAsync || expression.indexOf('await')!==-1;
-		let globalObj = window, globalCatch = noopFn;
+		let globalObj = window, globalCatch = noopFn, unscopables = execExpProxyDefaults.unscopables, args = ['$sdcScope','$sdcCatchError'];
 		if(globalsHide && throwGlobals) globalCatch = (key)=>{ throw new Error("Expression tried to access a global variable: "+key); };
+		if(argument?.length>0){ unscopables = { [argument]:true }; args.push(argument); }
 		let { getScopes, setScopes } = execExpression.#parseScopes(mainScopes,extraScopes);
-		let proxy = new execExpressionProxy({ mainScopes, getScopes, setScopes, scopeUseOwn, silentHas, globalObj, globalsHide, globalCatch, scopeCtrl, useSignalProxy });
+		let proxy = new execExpressionProxy({ mainScopes, getScopes, setScopes, scopeUseOwn, silentHas, globalObj, globalsHide, globalCatch, scopeCtrl, useSignalProxy, unscopables });
 		let fnCode = execExpression.#generateCode(expression,options,proxy.$attribute);
 		let fn, fnc = useAsync ? functionAsyncProto.constructor : functionProto.constructor;
 		let logFnError = (err)=>console.warn(`scopeDom: Error on Expression: ${expression}\n`,err.message,'\n',{ expression, fnCode, function:fn, mainScopes, getScopes, setScopes, result:err });
-		try{ fn = (new fnc(useAsync?['$sdcScope','$sdcCatchError']:['$sdcScope'],fnCode)).bind(fnThis||proxy,proxy,logFnError); }
+		try{ fn = (new fnc(args,fnCode)).bind(fnThis||proxy,proxy,logFnError); }
 		catch(err){ logFnError(err); }
-		let runFn = !fn ? noopFn : function $sdcExpRun(){ try{ return fn(); }catch(err){ return logFnError(err),err; } };
+		let runFn = !fn ? noopFn : (fnRaw ? fn : function $sdcExpRun(a){ try{ return fn(a); }catch(err){ return logFnError(err),err; } });
 		return { __proto__:null, result:null, firstScope:getScopes.values().next().value, function:fn, runFn, logFnError, getScopes, setScopes, proxy, options };
 	}
 	
