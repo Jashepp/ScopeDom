@@ -15,8 +15,8 @@ setupCloakStyle();
 export class pluginCloakSimple {
 	get name(){ return 'cloak'; }
 	
-	constructor(scopeDom,instance){
-		this.scopeDom = scopeDom;
+	constructor(ScopeDom,instance){
+		this.ScopeDom = ScopeDom;
 		this.instance = instance;
 		instance.onDOMReady(removeCloak);
 	}
@@ -31,4 +31,4 @@ export class pluginCloakSimple {
 }
 
 let win = typeof window!=='undefined' && window;
-if(win) win.scopeDom?.pluginAdd?.(pluginCloakSimple) || ((win.scopeDomPlugins=win.scopeDomPlugins||{}).pluginCloakSimple=pluginCloakSimple);
+if(win) win.ScopeDom?.pluginAdd?.(pluginCloakSimple) || ((win.ScopeDomPlugins=win.ScopeDomPlugins||{}).pluginCloakSimple=pluginCloakSimple);

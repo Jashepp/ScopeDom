@@ -10,10 +10,10 @@ const textNodeType = document.TEXT_NODE;
 export class pluginParse {
 	get name(){ return 'parse'; }
 	
-	constructor(scopeDom,instance){
-		this.scopeDom = scopeDom;
+	constructor(ScopeDom,instance){
+		this.ScopeDom = ScopeDom;
 		this.instance = instance;
-		this.isElementLoaded = scopeDom.isElementLoaded;
+		this.isElementLoaded = ScopeDom.isElementLoaded;
 		this.eventMap = new WeakMap(); // per element-set
 		this.mutObsMap = new WeakMap(); // per element
 		this.intObsMap = new WeakMap(); // per element
@@ -103,7 +103,7 @@ export class pluginParse {
 				let start = result.substr(0,pos1);
 				let end = result.substr(pos1+3);
 				expRegex = new RegExp('('+start+'(.*?)'+end+')','g');
-				let check = [...this.scopeDom.regexMatchAll(optFormatResult,expRegex)];
+				let check = [...this.ScopeDom.regexMatchAll(optFormatResult,expRegex)];
 				if(!check || !check?.[0]){ console.warn('pluginParse: invalid format,',result,'('+start+'(.*?)'+end+')',expRegex,check,expOpt?.attribute,element); return false; }
 				if(check?.[0]?.[1]!==optFormatResult){ console.warn('pluginParse: invalid format,',expRegex,check,expOpt?.attribute,element); return false; }
 				if(check?.[0]?.[2]!=='exp'){ console.warn('pluginParse: invalid format, missing exp,',expRegex,check,expOpt?.attribute,element); return false; }
@@ -225,7 +225,7 @@ export class pluginParse {
 				if(int.intersectionRatio>0){ if(!prevVisible){ state.isVisible=true; check=true; } }
 				else { if(prevVisible){ state.isVisible=false; } }
 			}
-			if(check) this.scopeDom.animFrameHelper.onceRAF(state.element,'pluginParse-onVisible',fn);
+			if(check) this.ScopeDom.animFrameHelper.onceRAF(state.element,'pluginParse-onVisible',fn);
 		}.bind(this),{ __proto__:null, threshold:[0,0.05,0.5,0.95,1], rootMargin:"10px", });
 		intObs.observe(element);
 		this.intObsMap.set(element,intObs);
@@ -237,7 +237,7 @@ export class pluginParse {
 		state.parsePending = false;
 		this._runParseExpressions(state);
 		// If document is still loading & there's an element mid-dom-construction
-		if(state.nodesPending) this.scopeDom.animFrameHelper.onceRAF(state.element,'pluginParse-nodesPending',this._scanParseRunSafe.bind(this,state));
+		if(state.nodesPending) this.ScopeDom.animFrameHelper.onceRAF(state.element,'pluginParse-nodesPending',this._scanParseRunSafe.bind(this,state));
 		state.nodesPending = false;
 	}
 	
@@ -262,8 +262,8 @@ export class pluginParse {
 				if(e.shadowRoot || e.nodeName==='TEMPLATE' || e.nodeName==='SCRIPT' || e.nodeName==='STYLE') continue;
 				if(parseText && e.nodeType===textNodeType){
 					if(parseNodes.has(e) || this.allParseTextNodes.has(e)) continue;
-					if(!this.scopeDom.isElementLoaded(e)){ state.nodesPending=true; continue; }
-					let isMatch = this.scopeDom.regexTest(e.data,expRegex);
+					if(!this.ScopeDom.isElementLoaded(e)){ state.nodesPending=true; continue; }
+					let isMatch = this.ScopeDom.regexTest(e.data,expRegex);
 					if(isMatch){
 						nodes.add(e);
 						state.parsePending = true;
@@ -295,20 +295,20 @@ export class pluginParse {
 		}
 		if(!recursiveFind){
 			if(parseAttribNames.size>0){
-				if(!this.scopeDom.isElementLoaded(eTarget)) state.nodesPending=true;
+				if(!this.ScopeDom.isElementLoaded(eTarget)) state.nodesPending=true;
 				for(let { name, value } of eTarget.attributes){
-					if(!parseAttribNames.has(name) || !this.scopeDom.regexTest(value,expRegex)) continue;
+					if(!parseAttribNames.has(name) || !this.ScopeDom.regexTest(value,expRegex)) continue;
 					if(parseAttribsMap.get(eTarget)?.has(name)) continue;
 					attribs.add({ __proto__:null, element:eTarget, name, value });
 					state.parsePending = true;
 				}
 			}
 			if(parseBindSafe && !parseBindSafe.ready){
-				if(!this.scopeDom.isElementLoaded(eTarget)) state.nodesPending=true;
+				if(!this.ScopeDom.isElementLoaded(eTarget)) state.nodesPending=true;
 				else { parseBindSafe.ready=true; state.parsePending=true; }
 			}
 			else if(parseBindHTML && !parseBindHTML.ready){
-				if(!this.scopeDom.isElementLoaded(eTarget)) state.nodesPending=true;
+				if(!this.ScopeDom.isElementLoaded(eTarget)) state.nodesPending=true;
 				else { parseBindHTML.ready=true; state.parsePending=true; }
 			}
 		}
@@ -434,7 +434,7 @@ export class pluginParse {
 					exec = obj.exec = this._execExpression(element,node,exp,signalObs);
 					signalObs.addListener(function parseTextNode_signalObserver(){
 						let updateIndex = obj.updateIndex;
-						self.scopeDom.animFrameHelper.onceRAF(node,signalObs,function parseTextNode_signalObserver_RAF(){
+						self.ScopeDom.animFrameHelper.onceRAF(node,signalObs,function parseTextNode_signalObserver_RAF(){
 							if(obj.updateIndex===updateIndex) self._updateTextNode(node,exec.runFn(),obj,state,updateIndex,signalObs);
 						});
 					});
@@ -455,7 +455,7 @@ export class pluginParse {
 					exec = obj.exec = this._execExpression(element,node,exp,signalObs);
 					signalObs.addListener(function parseAttribs_signalObserver(){
 						let updateIndex = obj.updateIndex;
-						self.scopeDom.animFrameHelper.onceRAF(node,signalObs,function parseAttribs_signalObserver_RAF(){
+						self.ScopeDom.animFrameHelper.onceRAF(node,signalObs,function parseAttribs_signalObserver_RAF(){
 							if(obj.updateIndex===updateIndex) self._updateAttribute(node,name,exec.runFn(),obj,state,updateIndex,signalObs);
 						});
 					});
@@ -473,7 +473,7 @@ export class pluginParse {
 					exec = parseBindSafe.exec = this._execExpression(element,element,exp,signalObs);
 					signalObs.addListener(function parseBindSafe_signalObserver(){
 						let updateIndex = parseBindSafe.updateIndex;
-						self.scopeDom.animFrameHelper.onceRAF(element,signalObs,function parseBindSafe_signalObserver_RAF(){
+						self.ScopeDom.animFrameHelper.onceRAF(element,signalObs,function parseBindSafe_signalObserver_RAF(){
 							if(parseBindSafe.updateIndex===updateIndex) self._updateBind(element,false,exec.runFn(),parseBindSafe,state,updateIndex,signalObs);
 						});
 					});
@@ -491,7 +491,7 @@ export class pluginParse {
 					exec = parseBindHTML.exec = this._execExpression(element,element,exp,signalObs);
 					signalObs.addListener(function parseBindHTML_signalObserver(){
 						let updateIndex = parseBindHTML.updateIndex;
-						self.scopeDom.animFrameHelper.onceRAF(element,signalObs,function parseBindHTML_signalObserver_RAF(){
+						self.ScopeDom.animFrameHelper.onceRAF(element,signalObs,function parseBindHTML_signalObserver_RAF(){
 							if(parseBindHTML.updateIndex===updateIndex) self._updateBind(element,true,exec.runFn(),parseBindHTML,state,updateIndex,signalObs);
 						});
 					});
@@ -510,14 +510,14 @@ export class pluginParse {
 			}
 			let onSuccess = (result)=>this._updateTextNode(node,result,obj,state,updateIndex,signalObs);
 			let onError = ()=>this._updateTextNode(node,options.onError,obj,state,updateIndex,signalObs);
-			this.scopeDom.animFrameHelper.promiseToRAF(result,onSuccess,onError);
+			this.ScopeDom.animFrameHelper.promiseToRAF(result,onSuccess,onError);
 			return;
 		}
 		// Ignore old calls
 		if(obj.updateIndex>updateIndex) return;
 		obj.updateIndex++;
 		// Result Types
-		result = this.scopeDom.resolveSignal(result,signalObs);
+		result = this.ScopeDom.resolveSignal(result,signalObs);
 		if(result instanceof Error) result = options.onError;
 		if(result instanceof Node){
 			let validNode = true;
@@ -549,11 +549,11 @@ export class pluginParse {
 	
 	_updateAttribute(element,attribute,result,obj,state,updateIndex,signalObs){
 		let { options } = state;
-		result = this.scopeDom.resolveSignal(result,signalObs);
+		result = this.ScopeDom.resolveSignal(result,signalObs);
 		if(result instanceof Promise){
 			let onSuccess = (result)=>this._updateAttribute(element,attribute,result,obj,state,updateIndex,signalObs);
 			let onError = ()=>this._updateAttribute(element,attribute,options.onError,obj,state,updateIndex,signalObs);
-			this.scopeDom.animFrameHelper.promiseToRAF(result,onSuccess,onError);
+			this.ScopeDom.animFrameHelper.promiseToRAF(result,onSuccess,onError);
 			return;
 		}
 		// Ignore old calls
@@ -570,14 +570,14 @@ export class pluginParse {
 		if(result instanceof Promise){
 			let onSuccess = (result)=>this._updateBind(element,isHTML,result,obj,state,updateIndex,signalObs);
 			let onError = ()=>this._updateBind(element,isHTML,options.onError,obj,state,updateIndex,signalObs);
-			this.scopeDom.animFrameHelper.promiseToRAF(result,onSuccess,onError);
+			this.ScopeDom.animFrameHelper.promiseToRAF(result,onSuccess,onError);
 			return;
 		}
 		// Ignore old calls
 		if(obj.updateIndex>updateIndex) return;
 		obj.updateIndex++;
 		// Result Types
-		result = this.scopeDom.resolveSignal(result,signalObs);
+		result = this.ScopeDom.resolveSignal(result,signalObs);
 		if(result instanceof Error) result = options.onError;
 		if(result instanceof NodeList){ let e=document.createDocumentFragment(); for(let n of [...result])e.appendChild(n); result=e; }
 		else if(result instanceof HTMLCollection){ let e=document.createDocumentFragment(); for(let n of [...result])e.appendChild(n); result=e; }
@@ -602,4 +602,4 @@ export class pluginParse {
 }
 
 let win = typeof window!=='undefined' && window;
-if(win) win.scopeDom?.pluginAdd?.(pluginParse) || ((win.scopeDomPlugins=win.scopeDomPlugins||{}).pluginParse=pluginParse);
+if(win) win.ScopeDom?.pluginAdd?.(pluginParse) || ((win.ScopeDomPlugins=win.ScopeDomPlugins||{}).pluginParse=pluginParse);

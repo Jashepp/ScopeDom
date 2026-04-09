@@ -5,10 +5,10 @@ const symbRepeatElementScope = Symbol("pluginRepeatElementScope");
 export class pluginRepeat {
 	get name(){ return 'repeat'; }
 	
-	constructor(scopeDom,instance){
-		this.scopeDom = scopeDom;
+	constructor(ScopeDom,instance){
+		this.ScopeDom = ScopeDom;
 		this.instance = instance;
-		this.isElementLoaded = scopeDom.isElementLoaded;
+		this.isElementLoaded = ScopeDom.isElementLoaded;
 		this.eventMap = new WeakMap(); // element, set (removeEvent cb)
 		this.stateMap = new WeakMap(); // element, state
 		this.afterElementDC = new WeakMap(); // element, cb
@@ -88,7 +88,7 @@ export class pluginRepeat {
 	}
 	
 	_setupRepeat(plugInfo,attrib){
-		let { scopeDom, instance, isElementLoaded } = this;
+		let { ScopeDom, instance, isElementLoaded } = this;
 		let { element, elementScopeCtrl, attribs } = plugInfo;
 		let { isDefault, attribute, nameKey, nameParts, value } = attrib;
 		// Re-use State
@@ -246,10 +246,10 @@ export class pluginRepeat {
 		if(includeNode) mainTemplate.content.appendChild(newElement);
 		else for(let e of [...newElement.childNodes]) mainTemplate.content.appendChild(e);
 		if(includeNode){
-			this.scopeDom.setAttribute(mainTemplate,attribute,newElement.getAttribute(attribute)||'');
+			this.ScopeDom.setAttribute(mainTemplate,attribute,newElement.getAttribute(attribute)||'');
 			newElement.removeAttribute(attribute);
 			for(let [n,opt] of attribOpts) if(opt.attribute && !opt.isDefault){
-				if(!mainTemplate.hasAttribute(opt.attribute)) this.scopeDom.setAttribute(mainTemplate,opt.attribute,opt.value||'');
+				if(!mainTemplate.hasAttribute(opt.attribute)) this.ScopeDom.setAttribute(mainTemplate,opt.attribute,opt.value||'');
 				newElement.removeAttribute(opt.attribute);
 			}
 			if(newElement.id?.length>0){
@@ -294,14 +294,14 @@ export class pluginRepeat {
 		if(!exec) state.exec = exec = instance.elementExecExp(state.scopeCtrl,exp,null,{ silentHas:true, useReturn:true, run:false });
 		let execResult = exec.runFn();
 		// Resolve Signal
-		execResult = this.scopeDom.resolveSignal(execResult);
+		execResult = this.ScopeDom.resolveSignal(execResult);
 		// Handle fallback when Promise on first update
 		if(state.itemsArr===null && execResult instanceof Promise){
 			this._handleRepeatDOM(plugInfo,state,updateIndex,[]);
 			updateIndex = state.updateIndex;
 		}
 		// Handle Result
-		if(execResult instanceof Promise) this.scopeDom.animFrameHelper.promiseToRAF(execResult,this._handleRepeatDOM.bind(this,plugInfo,state,updateIndex));
+		if(execResult instanceof Promise) this.ScopeDom.animFrameHelper.promiseToRAF(execResult,this._handleRepeatDOM.bind(this,plugInfo,state,updateIndex));
 		else this._handleRepeatDOM(plugInfo,state,updateIndex,execResult);
 	}
 	
@@ -316,7 +316,7 @@ export class pluginRepeat {
 		// Update state
 		element.$repeatResult = elementAnchor.$repeatResult = execResult;
 		// Resolve Signal
-		execResult = this.scopeDom.resolveSignal(execResult);
+		execResult = this.ScopeDom.resolveSignal(execResult);
 		// Convert list into entries [[key,value],...]
 		let itemsArr = [], domArr = [], anchorArr = [], isArr=false;
 		if(execResult instanceof Map){ itemsArr=Object.entries(execResult); }
@@ -491,4 +491,4 @@ export class pluginRepeat {
 }
 
 let win = typeof window!=='undefined' && window;
-if(win) win.scopeDom?.pluginAdd?.(pluginRepeat) || ((win.scopeDomPlugins=win.scopeDomPlugins||{}).pluginRepeat=pluginRepeat);
+if(win) win.ScopeDom?.pluginAdd?.(pluginRepeat) || ((win.ScopeDomPlugins=win.ScopeDomPlugins||{}).pluginRepeat=pluginRepeat);

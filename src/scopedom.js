@@ -20,12 +20,12 @@ import {
 
 const disableDocumentDefaultView = ()=>{
 	try{ defineProperty(window.document,'defaultView',{
-		get(){ return console.warn("scopeDom: document.defaultView is disabled"), { __proto__:null, getComputedStyle:window.getComputedStyle.bind(window) }; }
+		get(){ return console.warn("ScopeDom: document.defaultView is disabled"), { __proto__:null, getComputedStyle:window.getComputedStyle.bind(window) }; }
 	}); }
-	catch(e){ console.warn("scopeDom: Failed to disable document.defaultView\n",e); }
+	catch(e){ console.warn("ScopeDom: Failed to disable document.defaultView\n",e); }
 }
 
-/** @template {object} scopeDomInitOptions */
+/** @template {object} ScopeDomInitOptions */
 const initOptionsDefaults = {
 	dev: true, // Verbose developer logging
 	attribRegexMatch: /^\$((?:[\.\w\d]+)(?:\-[\.\w\d]+)*?)(?:\:((?:[\.\w\d]+)(?:\-[\.\w\d]+)*?))?$/, // group1: name, group2: option
@@ -43,7 +43,7 @@ const initOptionsDefaults = {
 	element: null,
 	onlyInstance: true, // Prevent further instances
 	privateInstance: false, // Enforces use of direct instance reference & prevent late plugins
-	allowLatePlugins: true, // Prevent pluginAdd after scopeDom init (defaults to false on privateInstance)
+	allowLatePlugins: true, // Prevent pluginAdd after ScopeDom init (defaults to false on privateInstance)
 	signalDefer: true,
 	signalProxyAll: true,
 };
@@ -76,22 +76,22 @@ const scopeElementAttribOptionDefaults = {
 	value: null
 };
 
-/** @type {Set<scopeDom>} */
+/** @type {Set<ScopeDom>} */
 const allInstances = new Set();
 
-/** @type {scopeDom|null} */
+/** @type {ScopeDom|null} */
 let mainInstance = null;
 
-/** @type {scopeDom|null} */
+/** @type {ScopeDom|null} */
 let onlyInstance = null;
 
 /** @type {Set<object|Function>|null} */
 let pluginsPostMain = null;
 
 /**
- * @typedef scopeDomCtrlCallbackObj
+ * @typedef ScopeDomCtrlCallbackObj
  * @prop {Proxy|object|any} scope
- * @prop {scopeDom} instance
+ * @prop {ScopeDom} instance
  * @prop {scopeController} controller
  * @prop {typeof scopeController.prototype.$signal} signal
  * @prop {typeof signalController.prototype.createSignal} createSignal
@@ -103,16 +103,16 @@ let pluginsPostMain = null;
  */
 
 /**
- * @callback scopeDomCtrlCallback
- * @param {scopeDomCtrlCallbackObj} detailsObject
+ * @callback ScopeDomCtrlCallback
+ * @param {ScopeDomCtrlCallbackObj} detailsObject
  * @returns {void}
  */
 
-/** @class scopeDom */
-class scopeDom {
+/** @class ScopeDom */
+class ScopeDom {
 	
 	static setupScriptTag(){
-		scopeDom.setupScriptTag = noopFn;
+		ScopeDom.setupScriptTag = noopFn;
 		// Check attributes on current script
 		for(let script=document?.currentScript;script;script=0){
 			// Options data-scopedom-options='{"globalContext":false}'
@@ -128,14 +128,14 @@ class scopeDom {
 			if(script?.getAttribute('data-scopedom-init')===''){
 				try{
 					if(mainInstance){
-						console.log("scopeDom: main instance is already initialised");
+						console.log("ScopeDom: main instance is already initialised");
 						return;
 					}
 					if(initOptionsScriptTag && 'privateInstance' in initOptionsScriptTag && initOptionsScriptTag.privateInstance){
 						console.log("scopeDOM: init via script tag cannot be used with option { privateInstance:true }");
 						return;
 					}
-					let instance = scopeDom.init();
+					let instance = ScopeDom.init();
 					if(instance.options.dev) console.log("scopeDOM: init from script tag");
 				} catch(err){ console.error("scopeDOM: failed to init from script tag",err,script); }
 			}
@@ -144,36 +144,36 @@ class scopeDom {
 	
 	/**
 	 * @static
-	 * @param {scopeDomInitOptions|object|null} initOptions
-	 * @returns {scopeDom}
+	 * @param {ScopeDomInitOptions|object|null} initOptions
+	 * @returns {ScopeDom}
 	 * @throws {Error}
 	 */
 	static init(initOptions={}){
-		if(mainInstance) throw new Error("scopeDom: main instance is already initialised");
-		let instance = new scopeDom(initOptions);
+		if(mainInstance) throw new Error("ScopeDom: main instance is already initialised");
+		let instance = new ScopeDom(initOptions);
 		return instance.beginDomWatching(), instance;
 	}
 	
 	/**
 	 * @static
-	 * @returns {scopeDom}
+	 * @returns {ScopeDom}
 	 * @throws {Error}
 	 */
 	static getInstance(){
-		if(!mainInstance) throw new Error("scopeDom: no main instance, use scopeDom.init");
-		if(mainInstance.options.privateInstance) throw new Error("scopeDom: main instance is private, directly reference that instance instead");
+		if(!mainInstance) throw new Error("ScopeDom: no main instance, use ScopeDom.init");
+		if(mainInstance.options.privateInstance) throw new Error("ScopeDom: main instance is private, directly reference that instance instead");
 		return mainInstance;
 	}
 	
 	/**
-	 * Define scope controller on main scopeDom instance
+	 * Define scope controller on main ScopeDom instance
 	 * @static
 	 * @param {Function|string|null=} name Scope Controller Name
-	 * @param {scopeDomCtrlCallback=} fn Scope Controller Function
-	 * @returns {scopeDom} scopeDom instance
+	 * @param {ScopeDomCtrlCallback=} fn Scope Controller Function
+	 * @returns {ScopeDom} ScopeDom instance
 	 */
 	static controller(name,fn){
-		return scopeDom.getInstance().controller(name,fn);
+		return ScopeDom.getInstance().controller(name,fn);
 	}
 	
 	/**
@@ -182,29 +182,29 @@ class scopeDom {
 	 * @throws {Error}
 	 */
 	static pluginAdd(plugin){
-		if(mainInstance && !mainInstance.options.allowLatePlugins) throw new Error("scopeDom: late plugin adding is disabled, due to main instance { allowLatePlugins:false }");
+		if(mainInstance && !mainInstance.options.allowLatePlugins) throw new Error("ScopeDom: late plugin adding is disabled, due to main instance { allowLatePlugins:false }");
 		for(let inst of allInstances){
-			if(inst.options.allowLatePlugins) inst.pluginAdd(plugin) || console.error("scopeDom: failed to add plugin to an instance");
+			if(inst.options.allowLatePlugins) inst.pluginAdd(plugin) || console.error("ScopeDom: failed to add plugin to an instance");
 		}
 		return true;
 	}
 	
 	/**
 	 * @constructor
-	 * @param {scopeDomInitOptions|object|null} initOptions
+	 * @param {ScopeDomInitOptions|object|null} initOptions
 	 */
 	constructor(initOptions={}){
-		if(onlyInstance) throw new Error("scopeDom: a private instance is already initialised");
+		if(onlyInstance) throw new Error("ScopeDom: a private instance is already initialised");
 		initOptions = { __proto__:null, ...initOptionsScriptTag, ...initOptions };
 		let options = { __proto__:null, ...initOptionsDefaults, ...initOptions };
 		if(!options.globalContext && options.documentContext && !options.documentDefaultView && window.document) disableDocumentDefaultView();
-		else if(options.globalContext && !options.documentContext) throw new Error("scopeDom: For documentContext to be false, globalContext must also be false");
-		if(options.onlyInstance && mainInstance) throw new Error("scopeDom: only the main (first) instance can use { onlyInstance:true }");
+		else if(options.globalContext && !options.documentContext) throw new Error("ScopeDom: For documentContext to be false, globalContext must also be false");
+		if(options.onlyInstance && mainInstance) throw new Error("ScopeDom: only the main (first) instance can use { onlyInstance:true }");
 		if(options.onlyInstance) onlyInstance = this;
 		if(!mainInstance) mainInstance = this;
 		allInstances.add(this);
 		let scope = options.scope===Object(options.scope) ? options.scope : new scopeBase();
-		/** @type {scopeDomInitOptions} */
+		/** @type {ScopeDomInitOptions} */
 		this.options = options;
 		/** @type {HTMLElement|null} */
 		this.mainElement = options.element || null;
@@ -227,10 +227,10 @@ class scopeDom {
 		this.isDuringOnReady = false;
 		// Plugins
 		this.plugins = { init:false, register:new Set(), onConnect:new Set(), onDisconnect:new Set(), onPluginAdd:new Set() };
-		try{ this.initPlugins(); }catch(err){ console.error("scopeDom: error during initPlugins:",err); }
+		try{ this.initPlugins(); }catch(err){ console.error("ScopeDom: error during initPlugins:",err); }
 		if(mainInstance===this){
 			pluginsPostMain = new Set();
-			for(let p of Object.values(window.scopeDomPlugins||[])) pluginsPostMain.add(p);
+			for(let p of Object.values(window.ScopeDomPlugins||[])) pluginsPostMain.add(p);
 		}
 		if(options.privateInstance && !('allowLatePlugins' in initOptions)) options.allowLatePlugins = false;
 		Object.freeze(this.options);
@@ -262,8 +262,8 @@ class scopeDom {
 	/**
 	 * Define scope controller
 	 * @param {Function|string|null=} name Scope Controller Name
-	 * @param {scopeDomCtrlCallback=} fn Scope Controller Function
-	 * @returns {scopeDom} scopeDom instance
+	 * @param {ScopeDomCtrlCallback=} fn Scope Controller Function
+	 * @returns {ScopeDom} ScopeDom instance
 	 */
 	controller(name,fn){
 		if(typeof name==="function") return this.controller(null,name);
@@ -273,9 +273,9 @@ class scopeDom {
 			this.namedControllers.set(null,{ __proto__:null, element:null, name, fn });
 			return;
 		}
-		if(!(typeof fn==="function")) throw new Error("scopeDom: controller params must be (name,function) or (function)");
+		if(!(typeof fn==="function")) throw new Error("ScopeDom: controller params must be (name,function) or (function)");
 		if(name!==null) name = ''+name;
-		if(this.namedControllers.has(name)) throw new Error(`scopeDom: controller '${name===null?'default':`"${name}"`}' already exists, specify a different name`);
+		if(this.namedControllers.has(name)) throw new Error(`ScopeDom: controller '${name===null?'default':`"${name}"`}' already exists, specify a different name`);
 		let ctrl = { __proto__:null, element:null, name, fn };
 		this.namedControllers.set(name,ctrl);
 		// Default Controller
@@ -765,8 +765,8 @@ class scopeDom {
 				if(scopeNamedAttrib){
 					if(scopeNamedAttrib.value?.length>0) value = scopeNamedAttrib.value;
 					let name = value, ctrl = this.namedControllers.get(name);
-					if(!ctrl){ console.warn(`scopeDom: scopeController "${name}" doesn't exist`); return; }
-					if(ctrl.element && ctrl.element!==element){ console.warn(`scopeDom: scopeController "${name}" is already in use`,{ ctrlElement:ctrl.element, newElement:element }); return; }
+					if(!ctrl){ console.warn(`ScopeDom: scopeController "${name}" doesn't exist`); return; }
+					if(ctrl.element && ctrl.element!==element){ console.warn(`ScopeDom: scopeController "${name}" is already in use`,{ ctrlElement:ctrl.element, newElement:element }); return; }
 					ctrl.element = element;
 					extra = { __proto__:null, _ctrlFn:ctrl.fn };
 					exp = `{ __proto__:null, _ctrlFn, $scopeElement:$this }`;
@@ -961,11 +961,11 @@ class scopeDom {
 	 * @param {{ onConnect:Function, onDisconnect:Function, onPluginAdd:Function }|Function} plugin
 	 */
 	pluginAdd(plugin){
-		if(!this.options.allowLatePlugins) throw console.log(this.options), new Error("scopeDom: late plugin adding is disabled, due to instance { allowLatePlugins:false }");
+		if(!this.options.allowLatePlugins) throw console.log(this.options), new Error("ScopeDom: late plugin adding is disabled, due to instance { allowLatePlugins:false }");
 		let plugins=this.plugins, register=plugins.register;
 		if(register.has(plugin)) return true;
 		register.add(plugin);
-		if(typeof plugin==='function' && plugin?.prototype?.constructor){ plugin=new plugin(scopeDom,this); register.add(plugin); }
+		if(typeof plugin==='function' && plugin?.prototype?.constructor){ plugin=new plugin(ScopeDom,this); register.add(plugin); }
 		// Methods
 		if(plugin.onConnect) plugins.onConnect.add(plugin.onConnect.bind(plugin));
 		if(plugin.onDisconnect) plugins.onDisconnect.add(plugin.onDisconnect.bind(plugin));
@@ -978,8 +978,8 @@ class scopeDom {
 	}
 	initPlugins(){
 		if(this.plugins.init) return;
-		if(!this.options.allowLatePlugins) throw console.log(this.options), new Error("scopeDom: late plugin adding is disabled, due to instance { allowLatePlugins:false }");
-		for(let plugin of pluginsPostMain||Object.values(window.scopeDomPlugins||[])||[]) this.pluginAdd(plugin);
+		if(!this.options.allowLatePlugins) throw console.log(this.options), new Error("ScopeDom: late plugin adding is disabled, due to instance { allowLatePlugins:false }");
+		for(let plugin of pluginsPostMain||Object.values(window.ScopeDomPlugins||[])||[]) this.pluginAdd(plugin);
 		this.plugins.init=true;
 	}
 	/**
@@ -1023,7 +1023,7 @@ class scopeDom {
 
 class pluginOnElementPlug {
 	/**
-	 * @param {scopeDom} instance
+	 * @param {ScopeDom} instance
 	 * @param {HTMLElement} element
 	 * @param {scopeElementController} elementScopeCtrl
 	 * @param {Map<string,scopeElementAttrib>} attribs
@@ -1036,7 +1036,7 @@ class pluginOnElementPlug {
 	}
 }
 
-Object.assign(scopeDom,{
+Object.assign(ScopeDom,{
 	animFrameHelper,
 	regexMatchAll, regexExec, regexTest,
 	setAttribute,
@@ -1057,8 +1057,7 @@ Object.assign(scopeDom,{
 	eventRegistry
 });
 
-scopeDom.setupScriptTag();
-Object.freeze(scopeDom);
+ScopeDom.setupScriptTag();
+Object.freeze(ScopeDom);
 
-export default scopeDom;
-
+export default ScopeDom;

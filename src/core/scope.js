@@ -14,7 +14,7 @@ import {
 import {
 	signalController, signalObserver, signalProxy, signalInstance, resolveSignal,
 } from "./signal.js";
-import scopeDom from "../scopedom.js";
+import ScopeDom from "../scopedom.js";
 
 
 export class scopeExpressionContext {};
@@ -73,12 +73,12 @@ export class scopeController {
 	 * @param {EventTarget|null} eventTarget
 	 * @param {scopeController|scopeElementController|null} parentCtrl
 	 * @param {boolean} isolated
-	 * @param {scopeDom|null} scopeDomInstance
+	 * @param {ScopeDom|null} ScopeDomInstance
 	 */
-	constructor(scopeObj=new scopeBase(),eventTarget=null,parentCtrl=null,isolated=false,scopeDomInstance=null){
+	constructor(scopeObj=new scopeBase(),eventTarget=null,parentCtrl=null,isolated=false,ScopeDomInstance=null){
 		if(scopeObj!==Object(scopeObj)) throw new Error("Missing scope object");
 		if(parentCtrl instanceof scopeElementController) parentCtrl = parentCtrl.ctrl;
-		this.scopeDomInstance = scopeDomInstance || parentCtrl?.scopeDomInstance || null;
+		this.ScopeDomInstance = ScopeDomInstance || parentCtrl?.ScopeDomInstance || null;
 		this.eventRegistry = new eventRegistry();
 		this.eventTarget = (eventTarget && eventTarget instanceof EventTarget) ? eventTarget : new EventTarget();
 		this.verbose = false;
@@ -91,7 +91,7 @@ export class scopeController {
 		this.execContext = new scopeControllerContext(this);
 		this.isDuringUpdate = false;
 		/** @type {signalController} */
-		this.signalCtrl = scopeDomInstance?.scopeCtrl?.signalCtrl || parentCtrl?.signalCtrl || new signalController(this);
+		this.signalCtrl = ScopeDomInstance?.scopeCtrl?.signalCtrl || parentCtrl?.signalCtrl || new signalController(this);
 	}
 	
 	$emitScopeUpdate(suffix=''){
@@ -101,7 +101,7 @@ export class scopeController {
 			this.$emit(evt+':before'); this.$emit(evt); this.$emit(evt+':after');
 			this.isDuringUpdate = false;
 		};
-		if(animFrameHelper.isDuringRAF || this.scopeDomInstance.isDuringOnReady || this.isDuringUpdate){ deferFn(emitUpdate); }
+		if(animFrameHelper.isDuringRAF || this.ScopeDomInstance.isDuringOnReady || this.isDuringUpdate){ deferFn(emitUpdate); }
 		else animFrameHelper.onceRAF(this.scope,evt,emitUpdate,true);
 	}
 	
@@ -269,7 +269,7 @@ export class scopeElementController {
 		fnOptions = { __proto__:null, ...fnOptions, scopeCtrl:this.ctrl };
 		let elementContext = !fnOptions?.hideDocument ? this.execContext : null;
 		if(!hasOwn(fnOptions,'fnThis') && !fnOptions?.hideDocument) fnOptions.fnThis = this.element;
-		let instance = this.ctrl.scopeDomInstance;
+		let instance = this.ctrl.ScopeDomInstance;
 		// Main controller scopes
 		let mainScopes = [];
 		for(let c=this.ctrl; c; c=c.parentCtrl){
@@ -325,7 +325,7 @@ export class scopeElementController {
 	$emitDomUpdate(suffix='',emitSelf=false){
 		if(this.isDuringUpdateDom) return; // Ignore DOM Update during DOM Update (for same element)
 		if(this.ctrl.isDuringUpdate) return; // Ignore DOM Update during Scope Update
-		if(this.scopeDomInstance.isDuringOnReady) return; // Ignore DOM Update during On Ready
+		if(this.ScopeDomInstance.isDuringOnReady) return; // Ignore DOM Update during On Ready
 		let evt='$update'+(suffix?.length>0?'-'+suffix:''), u=void 0, emitUpdate=()=>{
 			if(this.isDuringUpdateDom) return;
 			this.isDuringUpdateDom = true;

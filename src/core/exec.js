@@ -89,7 +89,7 @@ export class execExpression {
 		let proxy = new execExpressionProxy({ mainScopes, getScopes, setScopes, scopeUseOwn, silentHas, globalObj, globalsHide, globalCatch, scopeCtrl, useSignalProxy, unscopables });
 		let fnCode = execExpression.#generateCode(expression,options,proxy.$attribute);
 		let fn, fnc = useAsync ? functionAsyncProto.constructor : functionProto.constructor;
-		let logFnError = (err)=>console.warn(`scopeDom: Error on Expression: ${expression}\n`,err.message,'\n',{ expression, fnCode, function:fn, mainScopes, getScopes, setScopes, result:err });
+		let logFnError = (err)=>console.warn(`ScopeDom: Error on Expression: ${expression}\n`,err.message,'\n',{ expression, fnCode, function:fn, mainScopes, getScopes, setScopes, result:err });
 		try{ fn = (new fnc(args,fnCode)).bind(fnThis||proxy,proxy,logFnError); }
 		catch(err){ logFnError(err); }
 		let runFn = !fn ? noopFn : (fnRaw ? fn : function $sdcExpRun(a){ try{ return fn(a); }catch(err){ return logFnError(err),err; } });

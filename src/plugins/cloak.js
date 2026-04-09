@@ -8,15 +8,15 @@ document.head.prepend(styleReady);
 export class pluginCloak {
 	get name(){ return 'cloak'; }
 	
-	constructor(scopeDom,instance){
-		this.scopeDom = scopeDom;
+	constructor(ScopeDom,instance){
+		this.ScopeDom = ScopeDom;
 		this.instance = instance;
 		this.eventMap = new WeakMap(); // element, set (removeEvent cb)
 		this.stateMap = new Map(); // element, state
 	}
 	
 	onConnect(plugInfo){
-		let { scopeDom, instance } = this;
+		let { ScopeDom, instance } = this;
 		let { element, elementScopeCtrl, attribs } = plugInfo;
 		if(element.nodeName==='TEMPLATE' || !element.isConnected) return;
 		if(!attribs || attribs.size===0 || !attribs.has('cloak')) return;
@@ -39,7 +39,7 @@ export class pluginCloak {
 		state.scope = {
 			$element:element, $anchor:null,
 			plugins: this._hasPlugins.bind(this),
-			loaded: scopeDom.isElementLoaded.bind(null,element,false,false),
+			loaded: ScopeDom.isElementLoaded.bind(null,element,false,false),
 			ready: instance.isReady.bind(instance),
 		};
 		if(value===null || value==='') value = 'ready() && loaded()';
@@ -51,7 +51,7 @@ export class pluginCloak {
 		if(domSwap && element.nodeName!=='TEMPLATE'){
 			state.anchor = anchor = document.createComment(' Cloak-Anchor: '+element.cloneNode(false).outerHTML+' ');
 			state.scope.$anchor = anchor;
-			state.scope.loaded = scopeDom.isElementLoaded.bind(null,anchor,false,false),
+			state.scope.loaded = ScopeDom.isElementLoaded.bind(null,anchor,false,false),
 			element.replaceWith(anchor);
 			this._removeAttribs(element,attrib,attribOpts);
 			anchorScopeCtrl = state.anchorScopeCtrl = this.instance.elementScopeCtrl(anchor);
@@ -152,4 +152,4 @@ export class pluginCloak {
 }
 
 let win = typeof window!=='undefined' && window;
-if(win) win.scopeDom?.pluginAdd?.(pluginCloak) || ((win.scopeDomPlugins=win.scopeDomPlugins||{}).pluginCloak=pluginCloak);
+if(win) win.ScopeDom?.pluginAdd?.(pluginCloak) || ((win.ScopeDomPlugins=win.ScopeDomPlugins||{}).pluginCloak=pluginCloak);

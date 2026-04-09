@@ -255,7 +255,7 @@ export class signalController {
 export class signalObserver {
 	
 	constructor(signalCtrl,options={}){
-		options = { __proto__:null, defer:signalCtrl?.scopeDomInstance?.options?.signalDefer, ...options };
+		options = { __proto__:null, defer:signalCtrl?.ScopeDomInstance?.options?.signalDefer, ...options };
 		this.ctrl = signalCtrl;
 		this.signals = new WeakSet();
 		this.signalsIgnore = new WeakSet();
@@ -343,7 +343,7 @@ export class signalProxy {
 	
 	static has = function signalProxyHas(obj,prop){
 		let { target, proxies, signals } = obj;
-		if(!target) return console.warn("scopeDom signalProxy: has() called on proxy with gc'd target",{prop}), false;
+		if(!target) return console.warn("ScopeDom signalProxy: has() called on proxy with gc'd target",{prop}), false;
 		let hasProp = target && Reflect.has(target,prop);
 		if(!hasProp && signals.get(prop)?.getSilent()!==void 0) signals.delete(prop);
 		if(!hasProp && proxies.has(prop)) proxies.delete(prop);
@@ -352,7 +352,7 @@ export class signalProxy {
 	
 	static get = function signalProxyGet(obj,prop,receiver){
 		let getValue, { target, targetSignal, proxies, signalCtrl } = obj;
-		if(!target) return void console.warn("scopeDom signalProxy: get() called on proxy with gc'd target",{prop});
+		if(!target) return void console.warn("ScopeDom signalProxy: get() called on proxy with gc'd target",{prop});
 		if(!signalProxy.has(obj,prop)) return void signalProxy._proxyEnsureSignal(obj,prop,void 0).get();
 		try{ getValue = Reflect.get(target,prop,receiver); }catch(err){ getValue = target[prop]; }
 		let returnNow; [ getValue, returnNow ] = signalProxy._handleTypesGet(obj,prop,getValue);
@@ -369,7 +369,7 @@ export class signalProxy {
 	
 	static set = function signalProxySet(obj,prop,value,receiver){
 		let getValue, { target, targetSignal, proxies } = obj;
-		if(!target) return console.warn("scopeDom signalProxy: set() called on proxy with gc'd target",{prop}), false;
+		if(!target) return console.warn("ScopeDom signalProxy: set() called on proxy with gc'd target",{prop}), false;
 		try{ getValue = Reflect.get(target,prop,receiver); }catch(err){ getValue = target[prop]; }
 		value = resolveSignal(value);
 		value = signalProxy._handleTypesSet(obj,prop,getValue,value);
@@ -442,18 +442,18 @@ export class signalProxy {
 	
 	static deleteProperty(obj,prop){
 		let { target, proxies, signals } = obj;
-		if(!target) return void console.warn("scopeDom signalProxy: deleteProperty() called on proxy with gc'd target",{prop});
+		if(!target) return void console.warn("ScopeDom signalProxy: deleteProperty() called on proxy with gc'd target",{prop});
 		return proxies.delete(prop), signals.delete(prop), Reflect.deleteProperty(target,prop);
 	}
 	static construct(obj,argumentsList,newTarget){
 		let { target, targetSignal, signalCtrl } = obj;
-		if(!target) return void console.warn("scopeDom signalProxy: construct() called on proxy with gc'd target",{argumentsList});
+		if(!target) return void console.warn("ScopeDom signalProxy: construct() called on proxy with gc'd target",{argumentsList});
 		if(targetSignal) targetSignal.record();
 		return new signalProxy(Reflect.construct(target,argumentsList,newTarget),signalCtrl);
 	}
 	static apply = function signalProxyApply(obj,thisArgument,argumentsList){
 		let { target, targetSignal, signalCtrl } = obj;
-		if(!target) return void console.warn("scopeDom signalProxy: apply() called on proxy with gc'd target",{thisArgument,argumentsList});
+		if(!target) return void console.warn("ScopeDom signalProxy: apply() called on proxy with gc'd target",{thisArgument,argumentsList});
 		let thisTarget = spProxyMap.get(thisArgument)?.target || thisArgument;
 		targetSignal.record();
 		let result = Reflect.apply(target,thisTarget,argumentsList);
@@ -506,7 +506,7 @@ export class signalInstance {
 	 * @param {boolean} defer Defer (Promise.then) listener execution
 	 * @returns {signalObserver} Signal Observer only for this listener
 	 */
-	subscribe(fn,defer=this.#ctrl?.scopeDomInstance?.options?.signalDefer){
+	subscribe(fn,defer=this.#ctrl?.ScopeDomInstance?.options?.signalDefer){
 		defer = defer===true || defer===void 0;
 		let obs = this.#ctrl.createObserver({ defer });
 		obs.addListener(fn);

@@ -19,10 +19,10 @@ const matchCaseScope = Object.freeze({
 export class pluginIf {
 	get name(){ return 'if'; }
 	
-	constructor(scopeDom,instance){
-		this.scopeDom = scopeDom;
+	constructor(ScopeDom,instance){
+		this.ScopeDom = ScopeDom;
 		this.instance = instance;
-		this.isElementLoaded = scopeDom.isElementLoaded;
+		this.isElementLoaded = ScopeDom.isElementLoaded;
 		this.eventMap = new WeakMap(); // element, set (removeEvent cb)
 		this.stateMap = new WeakMap(); // element, state
 	}
@@ -58,17 +58,17 @@ export class pluginIf {
 		element.content.appendChild(template);
 		// Move attribs to inner template
 		element.removeAttribute(targetAttrib.attribute);
-		if(targetAttrib.value!==null) this.scopeDom.setAttribute(template,targetAttrib.attribute,targetAttrib.value);
+		if(targetAttrib.value!==null) this.ScopeDom.setAttribute(template,targetAttrib.attribute,targetAttrib.value);
 		for(let [n,opt] of targetAttrib.options){
 			if(opt.attribute) element.removeAttribute(opt.attribute);
-			if(opt.attribute && !opt.isDefault && opt.value!==null) this.scopeDom.setAttribute(template,opt.attribute,opt.value);
+			if(opt.attribute && !opt.isDefault && opt.value!==null) this.ScopeDom.setAttribute(template,opt.attribute,opt.value);
 		}
 		if(attribs.has(defaultAttribName)){
 			let defaultRepeat = attribs.get(defaultAttribName);
-			if(defaultRepeat.value!==null) this.scopeDom.setAttribute(template,defaultRepeat.attribute,defaultRepeat.value);
+			if(defaultRepeat.value!==null) this.ScopeDom.setAttribute(template,defaultRepeat.attribute,defaultRepeat.value);
 			for(let [n,opt] of defaultRepeat.options){
 				if(opt.attribute) element.removeAttribute(opt.attribute);
-				if(opt.attribute && opt.value!==null && !template.hasAttribute(opt.attribute)) this.scopeDom.setAttribute(template,opt.attribute,opt.value);
+				if(opt.attribute && opt.value!==null && !template.hasAttribute(opt.attribute)) this.ScopeDom.setAttribute(template,opt.attribute,opt.value);
 			}
 		}
 	}
@@ -274,7 +274,7 @@ export class pluginIf {
 				signalObs = state.signalObs = (signalObs || state.signalCtrl.createObserver());
 				let self=this; signalObs.addListener(function pluginIf_signalObserver(){
 					let updateIndex = state.updateIndex;
-					self.scopeDom.animFrameHelper.onceRAF(element,signalObs,function pluginIf_signalObserver_RAF(){
+					self.ScopeDom.animFrameHelper.onceRAF(element,signalObs,function pluginIf_signalObserver_RAF(){
 						if(state.updateIndex!==updateIndex) return;
 						self._runIfExpressions(plugInfo,attrib,state,exp,runMatch,true);
 					});
@@ -291,14 +291,14 @@ export class pluginIf {
 		// Ignore old results
 		if(state.updateIndex>updateIndex) return;
 		// Resolve Signal
-		result = this.scopeDom.resolveSignal(result,signalObs);
+		result = this.ScopeDom.resolveSignal(result,signalObs);
 		// If result is promise, use default & handleResult when settled
 		if(result instanceof Promise){
 			// Fallback / Default Value
 			this._handleResult(plugInfo,attrib,state,exp,updateIndex,runMatch,false,defaultValue);
 			updateIndex = state.updateIndex;
 			// Handle Result
-			this.scopeDom.animFrameHelper.promiseToRAF(result,this._handleResult.bind(this,plugInfo,attrib,state,exp,updateIndex,false,true));
+			this.ScopeDom.animFrameHelper.promiseToRAF(result,this._handleResult.bind(this,plugInfo,attrib,state,exp,updateIndex,false,true));
 			return;
 		}
 		// force updateOthers if match result is a promise
@@ -326,7 +326,7 @@ export class pluginIf {
 			}
 			matchResult = execMatch.result;
 			// Resolve Signal
-			execMatch.result = this.scopeDom.resolveSignal(execMatch.result,signalObs);
+			execMatch.result = this.ScopeDom.resolveSignal(execMatch.result,signalObs);
 			// Resolve Promise
 			if(execMatch.result instanceof Promise && Object.hasOwn(execMatch.result,matchCasePromiseResultSymbol)) matchResult = execMatch.result[matchCasePromiseResultSymbol];
 			if(execMatch.result instanceof Promise && execMatch.result?.[matchCasePromiseWaitSymbol]) matchResult = defaultValue;
@@ -335,14 +335,14 @@ export class pluginIf {
 				// console.log({ firstRun, runMatch, matchOnce });
 				matchResult = execMatch.result = execMatch.runFn();
 				// Resolve Signal
-				execMatch.result = this.scopeDom.resolveSignal(execMatch.result,signalObs);
+				execMatch.result = this.ScopeDom.resolveSignal(execMatch.result,signalObs);
 				// Resolve Promise
 				if(execMatch.result instanceof Promise && Object.hasOwn(execMatch.result,matchCasePromiseResultSymbol)) matchResult = execMatch.result[matchCasePromiseResultSymbol];
 				else if(execMatch.result instanceof Promise && execMatch.result?.[matchCasePromiseWaitSymbol]) matchResult = defaultValue;
 				else if(execMatch.result instanceof Promise){
 					matchResult = defaultValue;
 					execMatch.result[matchCasePromiseWaitSymbol] = true;
-					this.scopeDom.animFrameHelper.promiseToRAF(execMatch.result,(pResult)=>{
+					this.ScopeDom.animFrameHelper.promiseToRAF(execMatch.result,(pResult)=>{
 						execMatch.result[matchCasePromiseWaitSymbol] = false;
 						execMatch.result[matchCasePromiseResultSymbol] = pResult;
 						this._runIfExpressions(plugInfo,attrib,state,exp,false);
@@ -378,8 +378,8 @@ export class pluginIf {
 	_matchCase(matchObj,caseObj){
 		try{
 			// Resolve Signals
-			matchObj = this.scopeDom.resolveSignal(matchObj);
-			caseObj = this.scopeDom.resolveSignal(caseObj);
+			matchObj = this.ScopeDom.resolveSignal(matchObj);
+			caseObj = this.ScopeDom.resolveSignal(caseObj);
 			// Equals
 			if(matchObj===caseObj) return true;
 			if(typeof caseObj==='string' || typeof caseObj==='number' || typeof caseObj==='boolean') return false;
@@ -632,4 +632,4 @@ export class pluginIf {
 }
 
 let win = typeof window!=='undefined' && window;
-if(win) win.scopeDom?.pluginAdd?.(pluginIf) || ((win.scopeDomPlugins=win.scopeDomPlugins||{}).pluginIf=pluginIf);
+if(win) win.ScopeDom?.pluginAdd?.(pluginIf) || ((win.ScopeDomPlugins=win.ScopeDomPlugins||{}).pluginIf=pluginIf);
