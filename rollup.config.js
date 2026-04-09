@@ -11,27 +11,37 @@ let defaults = {
 	},
 	watch: !!isWatch,
 };
-let pluginUMD = { format:"umd", name:"scopeDomPlugins", extend:true, exports:"named" };
-let pluginESM = { format:"es" };
+let banner = ``;
+let footer = `\nif(typeof ScopeDom!=='undefined') Object.freeze(ScopeDom);`;
 
-let config = [
-	// Core UMD
-	{ input:"./src/scopedom.js", output:{ file:"./dist/scopedom.umd.js", format:"umd", name:"scopeDom", extend:true, exports:"default" } },
-	// Core Module
-	{ input:"./src/scopedom.js", output:{ file:"./dist/scopedom.js", format:"es" } },
-	// Plugin cloak
-	{ input:"./src/plugins/cloak.js", output:{ file:"./dist/plugins/cloak.umd.js", ...pluginUMD } },
-	{ input:"./src/plugins/cloak.js", output:{ file:"./dist/plugins/cloak.js", ...pluginESM } },
-	// Plugin parse
-	{ input:"./src/plugins/parse.js", output:{ file:"./dist/plugins/parse.umd.js", ...pluginUMD } },
-	{ input:"./src/plugins/parse.js", output:{ file:"./dist/plugins/parse.js", ...pluginESM } },
-	// Plugin if
-	{ input:"./src/plugins/if.js", output:{ file:"./dist/plugins/if.umd.js", ...pluginUMD } },
-	{ input:"./src/plugins/if.js", output:{ file:"./dist/plugins/if.js", ...pluginESM } },
-	// Plugin repeat
-	{ input:"./src/plugins/repeat.js", output:{ file:"./dist/plugins/repeat.umd.js", ...pluginUMD } },
-	{ input:"./src/plugins/repeat.js", output:{ file:"./dist/plugins/repeat.js", ...pluginESM } },
-];
+let pluginUMD = { format:"umd", name:"ScopeDomPlugins", extend:true, exports:"named", banner };
+let pluginESM = { format:"es", banner };
+
+let files = {
+	core: "./src/scopedom.js",
+	bundle: "./src/bundle.js",
+	plugins: {
+		"cloak-simple": "./src/plugins/cloak-simple.js",
+		cloak:	"./src/plugins/cloak.js",
+		parse:	"./src/plugins/parse.js",
+		if:		"./src/plugins/if.js",
+		repeat:	"./src/plugins/repeat.js",
+	},
+};
+
+let coreUMD = { input:files.core, output:{ file:"./dist/scopedom.umd.js", format:"umd", name:"ScopeDom", exports:"default", extend:true, banner, footer } };
+let coreESM = { input:files.core, output:{ file:"./dist/scopedom.js", format:"es", banner, footer } };
+
+let bundleUMD = { input:files.bundle, output:{ file:"./dist/scopedom.bundle.umd.js", format:"umd", name:"ScopeDom", exports:"default", extend:true, banner, footer } };
+let bundleESM = { input:files.bundle, output:{ file:"./dist/scopedom.bundle.js", format:"es", banner, footer } };
+
+let config = [coreUMD,coreESM,bundleUMD,bundleESM];
+
+// Plugins
+for(let [key,value] of Object.entries(files.plugins)){
+	config.push({ input:value, output:{ file:`./dist/plugins/${key}.umd.js`, ...pluginUMD } });
+	config.push({ input:value, output:{ file:`./dist/plugins/${key}.js`, ...pluginESM } });
+}
 
 for(let fileConfig of config){
 	Object.assign({},defaults,fileConfig);

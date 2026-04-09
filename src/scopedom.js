@@ -1058,6 +1058,5 @@ Object.assign(ScopeDom,{
 });
 
 ScopeDom.setupScriptTag();
-Object.freeze(ScopeDom);
 
-export default ScopeDom;
+export { ScopeDom as default }
