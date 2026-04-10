@@ -33,7 +33,7 @@ const execExpOptionsDefaults = {
 	run: true,
 	scopeUseOwn: null,
 	scopeCtrl: null,
-	useSignalProxy: true
+	useSignalProxy: false
 };
 
 /**

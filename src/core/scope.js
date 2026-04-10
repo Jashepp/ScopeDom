@@ -317,6 +317,7 @@ export class scopeElementController {
 		if(this.ctrl.execContext) otherScopes.add(this.ctrl.execContext);
 		// Run or build execExpression
 		fnOptions.scopeUseOwn = scopeUseOwn;
+		if(!('useSignalProxy' in fnOptions)) fnOptions.useSignalProxy = this.ctrl.ScopeDomInstance.options.signalProxyAll;
 		if(fnOptions.run!==false) return execExpression.runExp(expression,mainScopes,otherScopes,fnOptions);
 		else return execExpression.buildExp(expression,mainScopes,otherScopes,fnOptions);
 	}
