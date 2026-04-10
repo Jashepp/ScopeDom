@@ -276,6 +276,7 @@ export class pluginIf {
 					let updateIndex = state.updateIndex;
 					self.ScopeDom.animFrameHelper.onceRAF(element,signalObs,function pluginIf_signalObserver_RAF(){
 						if(state.updateIndex!==updateIndex) return;
+						signalObs.clearSignals();
 						self._runIfExpressions(plugInfo,attrib,state,exp,runMatch,true);
 					});
 				});

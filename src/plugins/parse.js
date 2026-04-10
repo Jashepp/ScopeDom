@@ -435,7 +435,9 @@ export class pluginParse {
 					signalObs.addListener(function parseTextNode_signalObserver(){
 						let updateIndex = obj.updateIndex;
 						self.ScopeDom.animFrameHelper.onceRAF(node,signalObs,function parseTextNode_signalObserver_RAF(){
-							if(obj.updateIndex===updateIndex) self._updateTextNode(node,exec.runFn(),obj,state,updateIndex,signalObs);
+							if(obj.updateIndex!==updateIndex) return;
+							signalObs.clearSignals();
+							self._updateTextNode(node,exec.runFn(),obj,state,updateIndex,signalObs);
 						});
 					});
 				}
@@ -456,7 +458,9 @@ export class pluginParse {
 					signalObs.addListener(function parseAttribs_signalObserver(){
 						let updateIndex = obj.updateIndex;
 						self.ScopeDom.animFrameHelper.onceRAF(node,signalObs,function parseAttribs_signalObserver_RAF(){
-							if(obj.updateIndex===updateIndex) self._updateAttribute(node,name,exec.runFn(),obj,state,updateIndex,signalObs);
+							if(obj.updateIndex!==updateIndex) return;
+							signalObs.clearSignals();
+							self._updateAttribute(node,name,exec.runFn(),obj,state,updateIndex,signalObs);
 						});
 					});
 				}
@@ -474,7 +478,9 @@ export class pluginParse {
 					signalObs.addListener(function parseBindSafe_signalObserver(){
 						let updateIndex = parseBindSafe.updateIndex;
 						self.ScopeDom.animFrameHelper.onceRAF(element,signalObs,function parseBindSafe_signalObserver_RAF(){
-							if(parseBindSafe.updateIndex===updateIndex) self._updateBind(element,false,exec.runFn(),parseBindSafe,state,updateIndex,signalObs);
+							if(parseBindSafe.updateIndex!==updateIndex) return;
+							signalObs.clearSignals();
+							self._updateBind(element,false,exec.runFn(),parseBindSafe,state,updateIndex,signalObs);
 						});
 					});
 				}
@@ -492,7 +498,9 @@ export class pluginParse {
 					signalObs.addListener(function parseBindHTML_signalObserver(){
 						let updateIndex = parseBindHTML.updateIndex;
 						self.ScopeDom.animFrameHelper.onceRAF(element,signalObs,function parseBindHTML_signalObserver_RAF(){
-							if(parseBindHTML.updateIndex===updateIndex) self._updateBind(element,true,exec.runFn(),parseBindHTML,state,updateIndex,signalObs);
+							if(parseBindHTML.updateIndex!==updateIndex) return;
+							signalObs.clearSignals();
+							self._updateBind(element,true,exec.runFn(),parseBindHTML,state,updateIndex,signalObs);
 						});
 					});
 				}

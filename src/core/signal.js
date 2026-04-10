@@ -201,7 +201,8 @@ export class signalController {
 			obs.clearSignals();
 			signal.set(recordingFn());
 		});
-		obs.addListener(updateFn); updateFn();
+		obs.addListener(updateFn);
+		signal.invalidatePull();
 		return [ signal, obs, obs.clear.bind(obs) ];
 	}
 	
