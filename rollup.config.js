@@ -26,6 +26,7 @@ let files = {
 		parse:	"./src/plugins/parse.js",
 		if:		"./src/plugins/if.js",
 		repeat:	"./src/plugins/repeat.js",
+		"pipe-expression":	"./src/plugins/pipe-expression.js",
 	},
 };
 
