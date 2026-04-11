@@ -156,8 +156,10 @@ export class pluginPipeExp {
 							if(prev!=="\\") stateObj.bracketCount--;
 						break;
 						case specialChar: // Special Character
-							if(specialChar==="|" && prev!=="|" && next!=="|") positions.add(i);
-							else positions.add(i);
+							if(stateObj.bracketCount===0 && tplLiteralCount===0){
+								if(specialChar==="|" && prev!=="|" && next!=="|") positions.add(i);
+								else positions.add(i);
+							}
 						default:
 						break;
 					}
