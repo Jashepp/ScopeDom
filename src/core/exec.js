@@ -53,12 +53,14 @@ export class execExpression {
 	
 	static #generateCode(expression,options,fnNameSuffix){
 		let { useAsync, strictMode, useReturn } = options;
-		let fnName = '$sdcExp'+(fnNameSuffix?.length>0 ? "_"+fnNameSuffix.replace(/[^A-Za-z0-9]/g,'_') : '');
-		let fnCode =    "with($sdcScope){let $sdcScope,arguments,constructor;";
-		fnCode +=         "return"+(useAsync?"(async ":"(")+"function "+fnName+"(){"+(strictMode?"\"use strict\";":"")+(useAsync?"let $sdcCatchError;":"");
-		fnCode += useReturn ? "return (\n\n"+expression+"\n\n);" : "\n\n"+expression+"\n\n";
-		fnCode +=         "}).apply(this)"+(useAsync?".catch($sdcCatchError);":";");
-		fnCode +=       "}";
+		let fnName = '$sdcExp'+(fnNameSuffix?.length>0 ? "_"+fnNameSuffix.replace(/[^A-Za-z0-9]/g,'_') : ''), fnCode
+		=`with($sdcScope){`
+		+	`let $sdcScope,arguments,constructor;`
+		+	`return${useAsync ? "(async " : "(" }function ${fnName}(){`
+		+		`${strictMode ? "\"use strict\";" : ""}${useAsync ? "let $sdcCatchError;" : ""}`
+		+		(useReturn ? `return (\n\n${expression}\n\n/**/);` : `\n\n${expression}\n\n/**/`)
+		+	`}).apply(this)${useAsync?".catch($sdcCatchError);":";"}`
+		+`}`;
 		return fnCode;
 	}
 	

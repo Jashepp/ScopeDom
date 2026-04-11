@@ -317,7 +317,13 @@ export class scopeElementController {
 		if(this.ctrl.execContext) otherScopes.add(this.ctrl.execContext);
 		// Run or build execExpression
 		fnOptions.scopeUseOwn = scopeUseOwn;
-		if(!('useSignalProxy' in fnOptions)) fnOptions.useSignalProxy = this.ctrl.ScopeDomInstance.options.signalProxyAll;
+		if(!('useSignalProxy' in fnOptions)) fnOptions.useSignalProxy = instance.options.signalProxyAll;
+		// Plugins onExpression
+		let expObj = { expression, mainScopes, otherScopes, options:fnOptions };
+		let expInfo = new ScopeDom.pluginOnElementExpression(instance,this.element,this,expObj);
+		instance.pluginsOnElementExpression(expInfo);
+		if(expObj.expression!==expression) expression = expObj.expression;
+		// Execute or build expression
 		if(fnOptions.run!==false) return execExpression.runExp(expression,mainScopes,otherScopes,fnOptions);
 		else return execExpression.buildExp(expression,mainScopes,otherScopes,fnOptions);
 	}

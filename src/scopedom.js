@@ -226,7 +226,7 @@ class ScopeDom {
 		this.onDOMReadyListeners = new Set();
 		this.isDuringOnReady = false;
 		// Plugins
-		this.plugins = { init:false, register:new Set(), onConnect:new Set(), onDisconnect:new Set(), onPluginAdd:new Set() };
+		this.plugins = { init:false, register:new Set(), onConnect:new Set(), onDisconnect:new Set(), onPluginAdd:new Set(), onExpression:new Set() };
 		try{ this.initPlugins(); }catch(err){ console.error("ScopeDom: error during initPlugins:",err); }
 		if(mainInstance===this){
 			pluginsPostMain = new Set();
@@ -939,6 +939,7 @@ class ScopeDom {
 		// Run plugins onDisconnect
 		this.pluginsOnDisconnect(new pluginOnElementPlug(this,element,elementScopeCtrl,attribs));
 	}
+	
 	/**
 	 * @param {WeakKey} element
 	 */
@@ -970,36 +971,49 @@ class ScopeDom {
 		if(plugin.onConnect) plugins.onConnect.add(plugin.onConnect.bind(plugin));
 		if(plugin.onDisconnect) plugins.onDisconnect.add(plugin.onDisconnect.bind(plugin));
 		if(plugin.onPluginAdd) plugins.onPluginAdd.add(plugin.onPluginAdd.bind(plugin));
+		if(plugin.onExpression) plugins.onExpression.add(plugin.onExpression.bind(plugin));
 		// Late Connect
 		if(plugins.init && plugin.onConnect && this.mainElement!==null) this.latePluginAdd_runConnect(plugin,this.mainElement,true);
 		// onPluginAdd Method
 		this.pluginsOnPluginAdd(plugin);
 		return true;
 	}
+	
 	initPlugins(){
 		if(this.plugins.init) return;
 		if(!this.options.allowLatePlugins) throw console.log(this.options), new Error("ScopeDom: late plugin adding is disabled, due to instance { allowLatePlugins:false }");
 		for(let plugin of pluginsPostMain||Object.values(window.ScopeDomPlugins||[])||[]) this.pluginAdd(plugin);
 		this.plugins.init=true;
 	}
+	
 	/**
 	 * @param {pluginOnElementPlug} plugObj
 	 */
 	pluginsOnConnect(plugObj){
 		for(let pluginOnConnect of this.plugins.onConnect) try{ pluginOnConnect(plugObj); }catch(err){ console.error(err); }
 	}
+	
 	/**
 	 * @param {pluginOnElementPlug} plugObj
 	 */
 	pluginsOnDisconnect(plugObj){
 		for(let pluginOnDisconnect of this.plugins.onDisconnect) try{ pluginOnDisconnect(plugObj); }catch(err){ console.error(err); }
 	}
+	
 	/**
 	 * @param {pluginOnElementPlug} plugObj
 	 */
 	pluginsOnPluginAdd(plugObj){
 		for(let pluginOnPluginAdd of this.plugins.onPluginAdd) try{ pluginOnPluginAdd(plugObj); }catch(err){ console.error(err); }
 	}
+	
+	/**
+	 * @param {ElementExpression} expObj
+	 */
+	pluginsOnElementExpression(expObj){
+		for(let pluginOnExpression of this.plugins.onExpression) try{ pluginOnExpression(expObj); }catch(err){ console.error(err); }
+	}
+	
 	/**
 	 * @param {{ onConnect:Function }} plugin
 	 * @param {HTMLElement} element
@@ -1008,7 +1022,7 @@ class ScopeDom {
 		if(!plugin || !this.plugins.init || !this.cacheConnectedNodes.has(element)) return;
 		list.add(element);
 		if(element.childNodes) for(let e of [...element.childNodes]) this.latePluginAdd_runConnect(plugin,e,false,list);
-		if(act){
+		if(act && plugin.onConnect){
 			let onConnect = plugin.onConnect.bind(plugin);
 			for(let e of list){
 				if(!e.isConnected) continue;
@@ -1036,6 +1050,21 @@ class pluginOnElementPlug {
 	}
 }
 
+class pluginOnElementExpression {
+	/**
+	 * @param {ScopeDom} instance
+	 * @param {HTMLElement} element
+	 * @param {scopeElementController} elementScopeCtrl
+	 * @param {Map<string,scopeElementAttrib>} attribs
+	 */
+	constructor(instance,element,elementScopeCtrl,expObj){
+		this.instance = instance;
+		this.element = element;
+		this.elementScopeCtrl = elementScopeCtrl;
+		this.expressionObj = expObj;
+	}
+}
+
 Object.assign(ScopeDom,{
 	animFrameHelper,
 	regexMatchAll, regexExec, regexTest,
@@ -1054,7 +1083,9 @@ Object.assign(ScopeDom,{
 	scopeController,
 	scopeElementContext,
 	scopeElementController,
-	eventRegistry
+	eventRegistry,
+	pluginOnElementPlug,
+	pluginOnElementExpression,
 });
 
 ScopeDom.setupScriptTag();
