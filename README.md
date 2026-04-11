@@ -2,7 +2,7 @@
 
 **ScopeDom is a Reactive DOM Orchestrator.**
 
-Most modern frameworks attempt to manage the DOM by creating a complex, virtual representation of it. **ScopeDom does the opposite: It makes the DOM itself intelligent.**
+Most modern frameworks attempt to manage the DOM by creating a complex, virtual representation of it. **ScopeDom does the opposite — it makes the DOM itself intelligent.**
 
 By leveraging native Web APIs — specifically Proxies, WeakMaps and MutationObservers — ScopeDom turns standard HTML attributes into **reactive, scoped expressions**. It doesn't try to replace the browser; **it orchestrates it**.
 
@@ -16,6 +16,8 @@ By leveraging native Web APIs — specifically Proxies, WeakMaps and MutationObs
 - **Declarative Reactivity**: Transform static markup into dynamic interfaces using intuitive attributes (eg: `$on-click`, `$if`, `$repeat`) and interpolation (eg: `{{expression}}`).
 
 - **Hierarchical Scoping**: Variables and methods flow naturally through the DOM tree, mimicking the way developers already think about nested UI components.
+
+- **Immediate DOM Parsing**: Prioritises responsiveness by observing elements as they arrive, rather than deferring to DOMContentLoaded.
 
 _Pronounced similarly to "Kingdom"_
 
@@ -57,7 +59,7 @@ _Pronounced similarly to "Kingdom"_
 
 To submit a contribution, please create an issue or a pull request on the [GitHub repository][github-url].
 
-**Note:** Please ensure you run all existing tests after making any changes. All help — from code to documentation improvements — is greatly appreciated!
+**Note:** Please ensure you run all existing tests after making any changes. All help, from code to documentation improvements, is greatly appreciated!
 
 ---
 ### ⚖️ License
