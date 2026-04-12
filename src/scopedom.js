@@ -15,7 +15,7 @@ import {
 	signalController, signalObserver, signalProxy, signalInstance, resolveSignal,
 } from "./core/signal.js";
 import {
-	scopeExpressionContext, scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
+	scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
 } from "./core/scope.js";
 
 const disableDocumentDefaultView = ()=>{
@@ -1070,7 +1070,6 @@ Object.assign(ScopeDom,{
 	regexMatchAll, regexExec, regexTest,
 	setAttribute,
 	isElementLoaded,
-	scopeExpressionContext,
 	scopeInstance,
 	scopeBase,
 	execExpression,

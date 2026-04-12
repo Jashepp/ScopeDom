@@ -17,8 +17,6 @@ import {
 import ScopeDom from "../scopedom.js";
 
 
-export class scopeExpressionContext {};
-
 export class scopeInstance {
 	constructor(scopeObj,scopeCtrl){
 		let mainObj = this;

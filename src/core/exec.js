@@ -12,7 +12,7 @@ import {
 	signalController, signalObserver, signalProxy, signalInstance, resolveSignal, signalSymb,
 } from "./signal.js";
 import {
-	scopeExpressionContext, scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
+	scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
 } from "./scope.js";
 
 const frozenNullObj=Object.freeze(Object.create(null));

@@ -12,7 +12,7 @@ import {
 	execExpression, execExpressionProxy,
 } from "./exec.js";
 import {
-	scopeExpressionContext, scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
+	scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
 } from "./scope.js";
 
 
