@@ -18,11 +18,10 @@ export class pluginPipeExp {
 			if(positions?.size>0){
 				let stack = this.getStackFromPositions(expression,positions);
 				finalStack.push(stack[0])
-				// Combine into c(b(a(value)))
+				// Parse methods & arguments
 				for(let i=1,l=stack.length; i<l; i++){
 					let exp = stack[i], hasParts = exp.includes(':'), newExp = exp;
 					let innerFn = exp, innerArgs = "";
-					// Parse function arguments
 					if(hasParts){
 						let innerPositions = this.jsExpressionBoundariesFullPass(exp,":");
 						if(innerPositions?.size>0){
@@ -37,6 +36,7 @@ export class pluginPipeExp {
 					}
 					finalStack.push([innerFn,innerArgs]);
 				}
+				// Combine into final expression
 				expressionObj.expression = this.reduceFinalStack(finalStack);
 			}
 		}
@@ -46,8 +46,7 @@ export class pluginPipeExp {
 		let strStart = '', strEnd = '';
 		for(let i=1,l=stack.length; i<l; i++){
 			let [ method, args ] = stack[i];
-			if(method.substring(0,6)==='await ') strStart = `await (${method.substring(6)})(${strStart}`;
-			else strStart = `(${method})(${strStart}`;
+			strStart = `${method}(${strStart}`;
 			strEnd = `${strEnd}${args?','+args:''})`;
 		}
 		return `${strStart}(${stack[0]})${strEnd}`;
@@ -69,7 +68,6 @@ export class pluginPipeExp {
 		let hasSingleQuote = expr.includes('"');
 		let hasDoubleQuote = expr.includes("'");
 		let hasTplLiteral = expr.includes('`');
-		let hasTplLiteralExp = hasTplLiteral && expr.includes('${');
 		// Fast Pass
 		if (!hasForwardSlash && !hasSingleQuote && !hasDoubleQuote && !hasTplLiteral) return this.pipeBoundariesFastPass(expr);
 		// Full Pass
@@ -93,15 +91,14 @@ export class pluginPipeExp {
 	jsExpressionBoundariesFullPass(expr,specialChar="|"){
 		let positions = new Set();
 		let type = 0; // 1=string, 2=tplLiteral, 4=regex, 5=commentDS, 6=commentML
-		let stringChar=null, state=[], stateTpl={ closureCount:0, bracketCount:0 }, tplLiteralCount=0;
-		state.push({ ...stateTpl });
+		let stringChar=null, stack=[], stateTpl={ closureCount:0, bracketCount:0 };
+		stack.push({ ...stateTpl });
 		for(let i=0,l=expr.length; i<l; i++){
-			let char=expr[i], prev=expr[i-1], next=expr[i+1], stateObj=state[state.length-1];
+			let char=expr[i], prev=expr[i-1], next=expr[i+1], state=stack[stack.length-1];
 			// Template Literal Expression End
-			if(tplLiteralCount>0 && type===0 && stateObj.closureCount===0 && stateObj.bracketCount===0 && char=="}" && prev!=="\\"){
-				tplLiteralCount--;
+			if(stack.length>1 && type===0 && state.closureCount===0 && state.bracketCount===0 && char=="}" && prev!=="\\"){
 				type = 2;
-				state.pop();
+				stack.pop();
 				continue;
 			}
 			// Type Switch
@@ -112,10 +109,9 @@ export class pluginPipeExp {
 				case 2:
 					// Template Literal Expression Handle
 					if(char=="$" && next==="{" && prev!=="\\"){
-						tplLiteralCount++;
 						i++;
 						type = 0;
-						state.push({ ...stateTpl });
+						stack.push({ ...stateTpl });
 					}
 					// Template Literal End
 					else if(char=="`" && prev!=="\\") type = 0;
@@ -145,24 +141,24 @@ export class pluginPipeExp {
 						break;
 						case "/":
 							// Comment Double Slash
-							if(next==="/" && next!=="*") type = 5;
+							if(next==="/") type = 5;
 							// Comment Multi Line
 							else if(next==="*") type = 6;
 						break;
 						case "{": // Closure Start
-							if(prev!=="\\") stateObj.closureCount++;
+							if(prev!=="\\") state.closureCount++;
 						break;
 						case "}": // Closure End
-							if(prev!=="\\") stateObj.closureCount--;
+							if(prev!=="\\") state.closureCount--;
 						break;
 						case "(": // Bracket Start
-							if(prev!=="\\") stateObj.bracketCount++;
+							if(prev!=="\\") state.bracketCount++;
 						break;
 						case ")": // Bracket End
-							if(prev!=="\\") stateObj.bracketCount--;
+							if(prev!=="\\") state.bracketCount--;
 						break;
 						case specialChar: // Special Character
-							if(stateObj.closureCount===0 && stateObj.bracketCount===0 && tplLiteralCount===0){
+							if(state.closureCount===0 && state.bracketCount===0 && stack.length===1){
 								if(specialChar==="|" && prev!=="|" && next!=="|") positions.add(i);
 								else positions.add(i);
 							}
@@ -174,9 +170,9 @@ export class pluginPipeExp {
 		}
 		if(type===1) throw new Error("SyntaxError: Unfinished String");
 		if(type===2) throw new Error("SyntaxError: Unfinished Template Literal");
-		if(tplLiteralCount!==0) throw new Error("SyntaxError: Unfinished Template Literal Expression");
-		if(state[0]?.closureCount>0) throw new Error("SyntaxError: Unfinished Closure");
-		if(state[0]?.bracketCount>0) throw new Error("SyntaxError: Unfinished Brackets");
+		if(stack.length>1) throw new Error("SyntaxError: Unfinished Template Literal Expression");
+		if(stack[0]?.closureCount>0) throw new Error("SyntaxError: Unfinished Closure");
+		if(stack[0]?.bracketCount>0) throw new Error("SyntaxError: Unfinished Brackets");
 		return positions;
 	}
 	
