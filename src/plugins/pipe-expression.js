@@ -93,12 +93,12 @@ export class pluginPipeExp {
 	jsExpressionBoundariesFullPass(expr,specialChar="|"){
 		let positions = new Set();
 		let type = 0; // 1=string, 2=tplLiteral, 4=regex, 5=commentDS, 6=commentML
-		let stringChar=null, state=[], stateTpl={ bracketCount:0 }, tplLiteralCount=0;
+		let stringChar=null, state=[], stateTpl={ closureCount:0, bracketCount:0 }, tplLiteralCount=0;
 		state.push({ ...stateTpl });
 		for(let i=0,l=expr.length; i<l; i++){
 			let char=expr[i], prev=expr[i-1], next=expr[i+1], stateObj=state[state.length-1];
 			// Template Literal Expression End
-			if(tplLiteralCount>0 && type===0 && stateObj.bracketCount===0 && char=="}" && prev!=="\\"){
+			if(tplLiteralCount>0 && type===0 && stateObj.closureCount===0 && stateObj.bracketCount===0 && char=="}" && prev!=="\\"){
 				tplLiteralCount--;
 				type = 2;
 				state.pop();
@@ -149,14 +149,20 @@ export class pluginPipeExp {
 							// Comment Multi Line
 							else if(next==="*") type = 6;
 						break;
-						case "{": // Bracket Start
+						case "{": // Closure Start
+							if(prev!=="\\") stateObj.closureCount++;
+						break;
+						case "}": // Closure End
+							if(prev!=="\\") stateObj.closureCount--;
+						break;
+						case "(": // Bracket Start
 							if(prev!=="\\") stateObj.bracketCount++;
 						break;
-						case "}": // Bracket End
+						case ")": // Bracket End
 							if(prev!=="\\") stateObj.bracketCount--;
 						break;
 						case specialChar: // Special Character
-							if(stateObj.bracketCount===0 && tplLiteralCount===0){
+							if(stateObj.closureCount===0 && stateObj.bracketCount===0 && tplLiteralCount===0){
 								if(specialChar==="|" && prev!=="|" && next!=="|") positions.add(i);
 								else positions.add(i);
 							}
@@ -169,7 +175,8 @@ export class pluginPipeExp {
 		if(type===1) throw new Error("SyntaxError: Unfinished String");
 		if(type===2) throw new Error("SyntaxError: Unfinished Template Literal");
 		if(tplLiteralCount!==0) throw new Error("SyntaxError: Unfinished Template Literal Expression");
-		if(state[0]?.bracketCount>0) throw new Error("SyntaxError: Unfinished Closure");
+		if(state[0]?.closureCount>0) throw new Error("SyntaxError: Unfinished Closure");
+		if(state[0]?.bracketCount>0) throw new Error("SyntaxError: Unfinished Brackets");
 		return positions;
 	}
 	
