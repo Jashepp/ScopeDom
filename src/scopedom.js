@@ -51,6 +51,7 @@ let initOptionsScriptTag = null;
 
 /** @template {object} scopeElementAttrib */
 const scopeElementAttribDefaults = {
+	/** @type {boolean} */
 	isDefault: true,
 	/** @type {string|null} */
 	attribute: null,
@@ -66,6 +67,7 @@ const scopeElementAttribDefaults = {
 
 /** @template {object} scopeElementAttribOption */
 const scopeElementAttribOptionDefaults = {
+	/** @type {boolean} */
 	isDefault: false,
 	/** @type {string|null} */
 	attribute: null,
@@ -101,17 +103,26 @@ let pluginsPostMain = null;
  * @prop {typeof signalController.prototype.computeSignal} computeSignal
  * @prop {typeof signalController.prototype.proxySignal} proxySignal
  * @prop {typeof signalController.prototype.defineProxySignal} defineProxySignal
+ * @prop {typeof signalController.prototype.preventUpdates} preventUpdates
+ * @prop {typeof signalController.prototype.preventObservers} preventObservers
  */
 
 /**
  * @callback ScopeDomCtrlCallback
- * @param {ScopeDomCtrlCallbackObj} detailsObject
+ * @param {ScopeDomCtrlCallbackObj} detailsObject { scope, instance, controller, signal, createSignal, defineSignal, assignSignals, computeSignal, proxySignal, defineProxySignal, preventUpdates, preventObservers }
  * @returns {void}
  */
 
-/** @class ScopeDom */
+/** @class ScopeDom
+ * The Main ScopeDom Class.
+ */
 class ScopeDom {
 	
+	/**
+	 * Parse script tag attributes.
+	 * data-scopedom-init attribute for automatic initialisation.
+	 * data-scopedom-options attribute for initialisation options.
+	 */
 	static setupScriptTag(){
 		ScopeDom.setupScriptTag = noopFn;
 		// Check attributes on current script
@@ -144,10 +155,11 @@ class ScopeDom {
 	}
 	
 	/**
+	 * Initialise the main instance of ScopeDom.
 	 * @static
-	 * @param {ScopeDomInitOptions|object|null} initOptions
+	 * @param {ScopeDomInitOptions|object|null} [initOptions] ScopeDom instance initialisation options
 	 * @returns {ScopeDom}
-	 * @throws {Error}
+	 * @throws {Error} If main instance has already been initialised
 	 */
 	static init(initOptions={}){
 		if(mainInstance) throw new Error("ScopeDom: main instance is already initialised");
@@ -156,9 +168,12 @@ class ScopeDom {
 	}
 	
 	/**
+	 * Get the main instance of ScopeDom if it has already been initialised.
+	 * 
+	 * If the main instance is private, then an error is thrown.
 	 * @static
-	 * @returns {ScopeDom}
-	 * @throws {Error}
+	 * @returns {ScopeDom} The main instance of ScopeDom
+	 * @throws {Error} If the main instance has not yet been initialised, or if it's private
 	 */
 	static getInstance(){
 		if(!mainInstance) throw new Error("ScopeDom: no main instance, use ScopeDom.init");
@@ -167,10 +182,10 @@ class ScopeDom {
 	}
 	
 	/**
-	 * Define scope controller on main ScopeDom instance
+	 * Define scope controller on main ScopeDom instance.
 	 * @static
-	 * @param {Function|string|null=} name Scope Controller Name
-	 * @param {ScopeDomCtrlCallback=} fn Scope Controller Function
+	 * @param {Function|string|null} [name] Scope Controller Name
+	 * @param {ScopeDomCtrlCallback} [fn] Scope Controller Function
 	 * @returns {ScopeDom} ScopeDom instance
 	 */
 	static controller(name,fn){
@@ -178,9 +193,10 @@ class ScopeDom {
 	}
 	
 	/**
-	 * @param {object|Function} plugin
-	 * @returns {boolean}
-	 * @throws {Error}
+	 * Add a plugin to all ScopeDom instances.
+	 * @param {object|Function} plugin Plugin object or constructor function
+	 * @returns {boolean} True if plugin was added successfully
+	 * @throws {Error} If late plugin adding is disabled
 	 */
 	static pluginAdd(plugin){
 		if(mainInstance && !mainInstance.options.allowLatePlugins) throw new Error("ScopeDom: late plugin adding is disabled, due to main instance { allowLatePlugins:false }");
@@ -191,8 +207,9 @@ class ScopeDom {
 	}
 	
 	/**
+	 * Initialize a new ScopeDom instance
 	 * @constructor
-	 * @param {ScopeDomInitOptions|object|null} initOptions
+	 * @param {ScopeDomInitOptions|object|null} initOptions Configuration options for the instance
 	 */
 	constructor(initOptions={}){
 		if(onlyInstance) throw new Error("ScopeDom: a private instance is already initialised");
@@ -238,7 +255,9 @@ class ScopeDom {
 	}
 	
 	/**
-	 * Start a MutationObserver to observe for changes on the DOM
+	 * Start a MutationObserver to observe for changes on the DOM.
+	 * Begins watching the main element or document.body for DOM changes.
+	 * Triggers scanning and ready callbacks when main element is found.
 	 */
 	beginDomWatching(){
 		let mutObs=null, onMainElement=()=>{
@@ -260,11 +279,13 @@ class ScopeDom {
 	}
 	
 	// Scope Handling
+	
 	/**
-	 * Define scope controller
-	 * @param {Function|string|null=} name Scope Controller Name
-	 * @param {ScopeDomCtrlCallback=} fn Scope Controller Function
+	 * Define scope controller.
+	 * @param {Function|string|null} name Scope Controller Name
+	 * @param {ScopeDomCtrlCallback} fn Scope Controller Function
 	 * @returns {ScopeDom} ScopeDom instance
+	 * @throws {Error} If arguments are incorrect, or if the named controller already exists
 	 */
 	controller(name,fn){
 		if(typeof name==="function") return this.controller(null,name);
@@ -289,6 +310,13 @@ class ScopeDom {
 		return this;
 	}
 	
+	/**
+	 * Handle scope controller function execution.
+	 * 
+	 * An object is passed as the only function argument, with scope (Proxy), instance, controller, and most signal helper methods.
+	 * @param {Proxy|object} proxy The proxy object for scope access
+	 * @param {ScopeDomCtrlCallback} fn The controller function to execute
+	 */
 	handleScopeCtrlFn(proxy,fn){
 		let signal = this.scopeCtrl.$signal.bind(this.scopeCtrl); // signal(value) : [get,set,signal]
 		let signalCtrl = this.scopeCtrl.signalCtrl, signalMethods = Object.fromEntries(
@@ -299,7 +327,19 @@ class ScopeDom {
 	}
 	
 	// Element Scanning & Watching
+	
+	/**
+	 * Scan and connect DOM tree.
+	 * 
+	 * Alias of connectElementAndChildren.
+	 * @param {...*} args Arguments passed to connectElementAndChildren
+	 */
 	scanDomTree(...args){ return this.connectElementAndChildren(...args); }
+	
+	/**
+	 * Watch DOM tree for changes using MutationObserver.
+	 * @param {HTMLElement} element The element to watch
+	 */
 	watchDomTree(element){
 		if(this.cacheWatchObservers.has(element)) return;
 		let self=this, mutObs=new MutationObserver(function domWatching(muts){
@@ -314,6 +354,13 @@ class ScopeDom {
 		this.cacheWatchObservers.set(element,mutObs);
 		mutObs.observe(element,{ subtree:true, childList:true, attributes:false });
 	}
+	
+	/**
+	 * Set up ready callback when DOM becomes interactive or complete.
+	 * 
+	 * Triggers onReady immediately if DOM is already loaded.
+	 * @param {boolean} domComplete Whether DOM is complete
+	 */
 	setReadyOnDomLoaded(){
 		if(document.readyState!=='loading') this.triggerOnReady(); // Do not delay this
 		let listener = function onDOMReadyStateChange(){
@@ -325,13 +372,33 @@ class ScopeDom {
 		}.bind(this);
 		document.addEventListener("readystatechange",listener,{ capture:true, passive:true, once:false });
 	}
+	
+	/**
+	 * Set up ready callback to fire on next RAF.
+	 * @param {boolean} domComplete Whether DOM is complete
+	 */
 	setReadyOnRaf(){
 		if(!this.onReadyListeners) return;
 		animFrameHelper.onceRAF(this,'readyOnRaf',this.triggerOnReady.bind(this));
 	}
 	
+	/**
+	 * Check if all ready callbacks have been triggered.
+	 * @returns {boolean} True if ready
+	 */
+	
 	isReady(){ return !this.onReadyListeners; }
+	
+	/**
+	 * Check if DOM is ready (all DOM ready callbacks triggered).
+	 * @returns {boolean} True if DOM is ready
+	 */
 	isDOMReady(){ return !this.onDOMReadyListeners; }
+	
+	/**
+	 * Trigger all registered ready callbacks.
+	 * @param {boolean} [domComplete=false] Whether DOM is complete
+	 */
 	triggerOnReady(domComplete=false){
 		this.checkPendingConnectElements();
 		if(this.onReadyListeners){
@@ -348,20 +415,22 @@ class ScopeDom {
 			for(const cb of list) try{ cb(); }catch(err){ console.error(err); }
 		}
 	}
+	
 	/**
-	 * Listen for when the DOM is first interactive or complete
-	 * @param {Function} cb Callback
-	 * @param {boolean=} delay Defer microtask or run instantly
+	 * Listen for when the DOM is first interactive or complete.
+	 * @param {Function} cb Callback function to execute
+	 * @param {boolean} [delay=true] Defer microtask or run instantly
 	 */
 	onReady(cb,delay=true){
 		if(this.onReadyListeners) this.onReadyListeners.add(cb);
 		else if(delay) deferFn(cb);
 		else cb();
 	}
+	
 	/**
-	 * Listen for when the DOM is complete
-	 * @param {Function} cb Callback
-	 * @param {boolean=} delay Defer microtask or run instantly
+	 * Listen for when the DOM is complete.
+	 * @param {Function} cb Callback function to execute
+	 * @param {boolean} [defer=true] Defer to microtask
 	 */
 	onDOMReady(cb,defer=true){
 		if(this.onDOMReadyListeners) this.onDOMReadyListeners.add(cb);
@@ -370,8 +439,9 @@ class ScopeDom {
 	}
 	
 	/**
-	 * @param {HTMLElement} element
-	 * @param {Function} cb
+	 * Register a callback to be called when an element is loaded.
+	 * @param {HTMLElement} element The element to watch
+	 * @param {Function} cb Callback function to execute when element is loaded
 	 */
 	onElementLoaded(element,cb){
 		if(isElementLoaded(element)) try{ cb(); }catch(err){ console.error(err); }
@@ -380,9 +450,12 @@ class ScopeDom {
 			this.pendingOnElementLoaded.get(element).add(cb);
 		}
 	}
+	
 	/**
-	 * @param {HTMLElement} element
-	 * @param {boolean=} checkParents
+	 * Check if an element should be ignored based on ignore attributes.
+	 * @param {HTMLElement} element The element to check
+	 * @param {boolean} [checkParents=false] Check parent elements
+	 * @returns {boolean} True if element should be ignored
 	 */
 	isElementIgnored(element,checkParents=false){
 		for(let e=element; e; e=checkParents?e.parentNode:null){
@@ -396,9 +469,13 @@ class ScopeDom {
 	}
 	
 	// Element Connection
+	
 	/**
-	 * Connect elements
-	 * @param {HTMLElement} element
+	 * Connect an element and all its children.
+	 * @param {HTMLElement} element The element to connect
+	 * @param {boolean} [act=true] Connect elements
+	 * @param {Set} [list] Set of elements being processed
+	 * @param {boolean} [checkIgnoreParents=false] Check parent elements for ignore attributes
 	 */
 	connectElementAndChildren(element,act=true,list=new Set(),checkIgnoreParents=false){ // Connect parent before children
 		if(element.nodeType===commentNodeType){ this.connectElement(element); return; }
@@ -408,9 +485,12 @@ class ScopeDom {
 		if(element.childNodes && element.nodeName!=='TEMPLATE' && element.nodeName!=='svg' && !element.shadowRoot) for(let e of [...element.childNodes]) this.connectElementAndChildren(e,false,list);
 		if(act) for(let e of list.values()) if(e.isConnected) this.connectElement(e);
 	}
+	
 	/**
-	 * Disconnect Elements
-	 * @param {HTMLElement} element
+	 * Disconnect an element and all its children.
+	 * @param {HTMLElement} element The element to disconnect
+	 * @param {boolean} [act=true] Disconnect elements
+	 * @param {Set} [list] Set of elements being processed
 	 */
 	disconnectElementAndChildren(element,act=true,list=new Set()){ // Disconnect children before parent
 		if(this.isElementIgnored(element,true)) return;
@@ -418,9 +498,10 @@ class ScopeDom {
 		list.add(element);
 		if(act) for(let e of list.values()) if(!e.isConnected) this.disconnectElement(e);
 	}
+	
 	/**
-	 * Connect Specific Element
-	 * @param {HTMLElement} element
+	 * Element is being connected (added into DOM).
+	 * @param {HTMLElement} element Connected element
 	 */
 	connectElement(element){
 		if(this.pendingConnectNodes.has(element) && !isElementLoaded(element,true)) return;
@@ -430,15 +511,20 @@ class ScopeDom {
 		this.pendingConnectNodes.delete(element);
 		this.triggerElementConnect(element);
 	}
+	
 	/**
-	 * Disconnect Specific Element
-	 * @param {HTMLElement} element
+	 * Element is being disconnected (removed from DOM).
+	 * @param {HTMLElement} element Disconnected element
 	 */
 	disconnectElement(element){
 		if(!this.cacheConnectedNodes.has(element)){ this.cleanupDisconnected(element); return; }
 		this.triggerElementDisconnect(element);
 		this.cleanupDisconnected(element,true);
 	}
+	
+	/**
+	 * Check and connect pending elements that are now loaded.
+	 */
 	checkPendingConnectElements(){
 		for(let e of this.pendingConnectNodes) if(isElementLoaded(e,true)) this.connectElementAndChildren(e);
 		for(let [e,cbList] of this.pendingOnElementLoaded) if(isElementLoaded(e)){
@@ -448,8 +534,12 @@ class ScopeDom {
 	}
 	
 	// Attrib Handling
+	
 	/**
-	 * @param {HTMLElement} element
+	 * Find ScopeDom attributes for an element.
+	 * @param {HTMLElement} element The element
+	 * @param {boolean} [useCache=true] Use cached results
+	 * @param {boolean} [checkConnected=true] Check if element is connected
 	 * @returns {Map<string,scopeElementAttrib>|null}
 	 */
 	elementAttribs(element,useCache=true,checkConnected=true){
@@ -482,8 +572,11 @@ class ScopeDom {
 	}
 	
 	/**
-	 * @param {HTMLElement} element
-	 * @returns {Map<string,scopeElementAttrib>|null}
+	 * Find ScopeDom default attributes for an element by traversing up the DOM tree.
+	 * @param {HTMLElement} element The element to find defaults for
+	 * @param {boolean} [useCache=true] Use cached results
+	 * @param {boolean} [checkConnected=true] Check if element is connected
+	 * @returns {Map<string,scopeElementAttrib>|null} Map of default attribute names to attribute objects
 	 */
 	elementFindDefaults(element,useCache=true,checkConnected=true){
 		if(checkConnected && (!this.cacheConnectedNodes.has(element) || !element.isConnected)) return null;
@@ -510,9 +603,12 @@ class ScopeDom {
 	}
 	
 	/**
-	 * @param {HTMLElement} element
-	 * @param {scopeElementAttrib} attrib
-	 * @returns {scopeElementAttribOption}
+	 * Get attribute options with defaults merged in.
+	 * @param {HTMLElement} element The element
+	 * @param {scopeElementAttrib} attrib The attribute object
+	 * @param {boolean} [useCache=true] Use cached results
+	 * @param {boolean} [checkConnected=true] Check if element is connected
+	 * @returns {Map<string,scopeElementAttribOption>} Merged options map
 	 */
 	elementAttribOptionsWithDefaults(element,attrib,useCache=true,checkConnected=true){
 		let { nameKey, nameParts, options } = attrib;
@@ -524,9 +620,12 @@ class ScopeDom {
 	}
 	
 	/**
-	 * @param {scopeElementAttrib} attrib
-	 * @param {Array<string>|Set<string>|null} whitelist
-	 * @returns {string|null}
+	 * Get attribute's value, with fallback to other option values.
+	 * @param {scopeElementAttrib} attrib The attribute object
+	 * @param {Array<string>|Set<string>|null} [whitelist] Whitelist of option keys/names
+	 * @param {boolean} [updateOption=true] Update the fallback option 's value to '' (consume)
+	 * @param {boolean} [updateAttrib=true] Update attribute with fallback value
+	 * @returns {string|null} The fallback value
 	 */
 	elementAttribFallbackOptionValue(attrib,whitelist=null,updateOption=true,updateAttrib=true){
 		let { options, attribute, value } = attrib;
@@ -548,10 +647,12 @@ class ScopeDom {
 	}
 	
 	/**
-	 * @param {HTMLElement} element
-	 * @param {Map<string,scopeElementAttribOption>} attribOpts
-	 * @param {string} optName
-	 * @param {object|any} parseOptions
+	 * Parse an attribute optionm used mostly by plugins.
+	 * @param {HTMLElement} element The element
+	 * @param {Map<string,scopeElementAttribOption>} attribOpts The attribute options map
+	 * @param {string} optName The option key/name ($attr:foo-bar becomes 'foo bar')
+	 * @param {object|any} [parseOptions] Options for parsing, default (default value), emptyTrue (treat empty as true), runExp (run the expression straight away)
+	 * @returns {{value:*, raw:string|null, attribOption:scopeElementAttribOption|null, isDefault:boolean}} Parsed option result
 	 */
 	elementAttribParseOption(element,attribOpts,optName,parseOptions={}){
 		parseOptions = { __proto__:null, default:null, emptyTrue:false, runExp:false, ...parseOptions };
@@ -566,8 +667,14 @@ class ScopeDom {
 	}
 	
 	// New Scope Controller
+	
 	/**
-	 * @param {HTMLElement} element
+	 * Create a new scopeElementController for an element.
+	 * @param {HTMLElement} element The element
+	 * @param {scopeBase|object|null} [newScope] The new or existing scopeController
+	 * @param {scopeController} [parentScopeCtrl] The parent scopeController
+	 * @param {boolean} [insertCache=true] Insert into scopeElementController cache
+	 * @returns {scopeElementController} The new scopeElementController
 	 */
 	elementNewScopeCtrl(element,newScope=void 0,parentScopeCtrl=this.scopeCtrl,insertCache=true){
 		if(parentScopeCtrl instanceof scopeElementController) parentScopeCtrl = parentScopeCtrl.ctrl;
@@ -576,8 +683,14 @@ class ScopeDom {
 		if(insertCache) this.cacheElementScopeCtrls.set(element,elementScopeCtrl);
 		return elementScopeCtrl;
 	}
+	
 	/**
-	 * @param {HTMLElement} element
+	 * Create a new isolated scopeController for an element.
+	 * @param {HTMLElement} element The element
+	 * @param {scopeBase|object|null} [newScope] The new or existing scopeController
+	 * @param {scopeController} [parentScopeCtrl] The parent scopeController
+	 * @param {boolean} [insertCache=true] Insert into scopeElementController cache
+	 * @returns {scopeElementController} The new scopeElementController
 	 */
 	elementNewIsolatedScopeCtrl(element,newScope=void 0,parentScopeCtrl=this.scopeCtrl,insertCache=true){
 		if(parentScopeCtrl instanceof scopeElementController) parentScopeCtrl = parentScopeCtrl.ctrl;
@@ -586,9 +699,14 @@ class ScopeDom {
 		if(insertCache) this.cacheElementScopeCtrls.set(element,elementScopeCtrl);
 		return elementScopeCtrl;
 	}
+	
 	/**
-	 * @param {HTMLElement} toElement
-	 * @param {HTMLElement} fromElement
+	 * This creates an alias to a different element, so any scopeElementController lookups on this new element, will return the scopeElementController for the original element.
+	 * 
+	 * Useful for DOM element swapping ($if:dom for example).
+	 * It also aliases element extra scopes & element isolated scopes
+	 * @param {HTMLElement} toElement The new element to set alias for
+	 * @param {HTMLElement} fromElement The original element to alias from
 	 */
 	elementScopeSetAlias(toElement,fromElement){
 		// Element Scopes
@@ -608,12 +726,13 @@ class ScopeDom {
 		}
 	}
 	
-	// Find Scope Controller
 	/**
-	 * @param {HTMLElement} element
-	 * @param {boolean} useCache
-	 * @param {boolean} findParent
-	 * @param {scopeBase|object|null} newScope
+	 * Create or re-use scopeElementController for this element.
+	 * @param {HTMLElement} element The element to create a scopeElementController for
+	 * @param {boolean} [useCache=true] Use cached scopeElementController
+	 * @param {boolean} [findParent=true] Include parent controller for scopeElementController
+	 * @param {scopeBase|object|null} [newScope] Scope passed to scopeElementController
+	 * @returns {scopeElementController} The new or existing scopeElementController
 	 */
 	elementScopeCtrl(element,useCache=true,findParent=true,newScope=null){
 		if(useCache && this.cacheElementScopeCtrls.has(element)) return this.cacheElementScopeCtrls.get(element);
@@ -624,8 +743,11 @@ class ScopeDom {
 		if(useCache) this.cacheElementScopeCtrls.set(element,ctrl);
 		return ctrl;
 	}
+	
 	/**
-	 * @param {HTMLElement} element
+	 * Find the closest parent scopeElementController for an element.
+	 * @param {HTMLElement} element The element
+	 * @returns {scopeElementController|null} The parent scope controller or null
 	 */
 	elementFindParentScopeCtrl(element){
 		for(let e=element; e; e=e.parentNode){
@@ -634,12 +756,12 @@ class ScopeDom {
 		}
 	}
 	
-	// Execute Expression on Element
 	/**
-	 * @param {scopeElementController} elementScopeCtrl
-	 * @param {string} expression
-	 * @param {object|null} extra
-	 * @param {object=} options
+	 * Execute an expression on an element via scopeElementController.
+	 * @param {scopeElementController} elementScopeCtrl The scopeElementController
+	 * @param {string} expression The expression to execute
+	 * @param {object|null} [extra=null] Extra scopes (handy for plugins)
+	 * @param {object} [options] execExpression options
 	 */
 	elementExecExp(elementScopeCtrl,expression,extra=null,options={}){
 		let extraScopes = extra?[extra]:[], elementScopes = this.getElementScopes(elementScopeCtrl.element);
@@ -647,10 +769,12 @@ class ScopeDom {
 		options = { __proto__:null, globalsHide:!globalContext, hideDocument:!documentContext, useSignalProxy:!!signalProxyAll, ...options };
 		return elementScopeCtrl.execElementExpression(expression,extraScopes,elementScopes,options);
 	}
-	// Get Element Scopes [[element,scopesArr],...]
+	
 	/**
-	 * @param {HTMLElement} element
-	 * @param {Array<object>} eScopes
+	 * Get all element extra scopes for an element.
+	 * @param {HTMLElement} element The element
+	 * @param {Array<object>} [eScopes] Accumulator array (internal use)
+	 * @returns {Array<object>} Array of [element, scopesArray] pairs
 	 */
 	getElementScopes(element,eScopes=[]){
 		for(let e=element; e; e=e.parentNode){
@@ -660,12 +784,14 @@ class ScopeDom {
 		}
 		return eScopes;
 	}
+	
 	/**
-	 * @param {HTMLElement} key
-	 * @param {HTMLElement|null} isolated
-	 * @param {Set<HTMLElement>} uniqueKeys
-	 * @param {Array<object>} list
-	 * @returns {Array<object>}
+	 * Resolve element scopes recursively (used by getElementScopes).
+	 * @param {HTMLElement} key The key/element
+	 * @param {HTMLElement|null} [isolated=null] The isolated element
+	 * @param {Set<HTMLElement>} [uniqueKeys] Set of unique keys to prevent recursion
+	 * @param {Array<object>} [list] Internal accumulator list
+	 * @returns {Array<object>} Resolved scopes list
 	 */
 	resolveElementScopes(key,isolated=null,uniqueKeys=new Set([key]),list=[]){
 		let arr = this.elementExtraScopes.get(key), isolatedParent = isolated?.parentNode;
@@ -688,17 +814,22 @@ class ScopeDom {
 	}
 	
 	// Handle connect & disconnect
+	
 	/**
-	 * @param {HTMLElement} element
-	 * @param {Function} removeListener
+	 * Register an event listener to be removed on disconnect.
+	 * Any event listeners related to an element, should call this to cleanup after itself.
+	 * @param {HTMLElement} element The element
+	 * @param {Function} removeListener The function to remove the listener
 	 */
 	registerElementRelatedEvent(element,removeListener){
 		let map = this.elementRelatedEventListeners;
 		if(!map.has(element)) map.set(element,new Set());
 		map.get(element).add(removeListener);
 	}
+	
 	/**
-	 * @param {HTMLElement} element
+	 * Remove event listeners related to the element.
+	 * @param {HTMLElement} element The element
 	 */
 	removeElementRelatedEvents(element){
 		let map = this.elementRelatedEventListeners;
@@ -710,11 +841,11 @@ class ScopeDom {
 	}
 	
 	/**
-	 * Gets signal for given expression. If it doesnt exist, create one.
+	 * Gets signal for given key/variable expression. If it doesnt exist, it creates one.
 	 * Useful for making sure a variable exists, to be usable elsewhere.
-	 * Returns { signal, expFn } - expFn is an expression function that returns the expression's result
 	 * @param {Element} element Element for elementScopeController instance
 	 * @param {string} key Expression (scope variable name)
+	 * @returns {object} { signal, expFn } expFn is an expression function that returns the expression's result.
 	 */
 	ensureExpressionSignal(element,key){
 		let elementScopeCtrl = this.elementScopeCtrl(element);
@@ -730,7 +861,8 @@ class ScopeDom {
 	}
 	
 	/**
-	 * @param {HTMLElement} element
+	 * Trigger connect for an element - handles all attribute processing.
+	 * @param {HTMLElement} element The element being connected
 	 */
 	triggerElementConnect(element){
 		let attribs = this.elementAttribs(element), elementScopeCtrl, queue=[];
@@ -908,7 +1040,8 @@ class ScopeDom {
 	}
 	
 	/**
-	 * @param {HTMLElement} element
+	 * Trigger disconnect for an element - handles cleanup.
+	 * @param {HTMLElement} element The element being disconnected
 	 */
 	triggerElementDisconnect(element){
 		if(!this.cacheConnectedNodes.has(element)) return;
@@ -941,7 +1074,9 @@ class ScopeDom {
 	}
 	
 	/**
-	 * @param {WeakKey} element
+	 * Cleanup disconnected element caches and listeners.
+	 * @param {WeakKey} element The element to cleanup
+	 * @param {boolean} [completely=false] Clear connected nodes cache & pending connect nodes
 	 */
 	cleanupDisconnected(element,completely=false){
 		if(this.cacheElementAttribs.has(element)) this.cacheElementAttribs.delete(element);
@@ -958,8 +1093,19 @@ class ScopeDom {
 	}
 	
 	// Plugins & Middleware
+	
 	/**
-	 * @param {{ onConnect:Function, onDisconnect:Function, onPluginAdd:Function }|Function} plugin
+	 * @typedef pluginTemplate
+	 * @prop {Function} onConnect
+	 * @prop {Function} onDisconnect
+	 * @prop {Function} onPluginAdd
+	 * @prop {Function} onExpression
+	 */
+	
+	/**
+	 * Add a plugin to this instance.
+	 * @param {pluginTemplate|Function} plugin Plugin object or constructor function
+	 * @throws {Error} If late plugin adding is disabled
 	 */
 	pluginAdd(plugin){
 		if(!this.options.allowLatePlugins) throw console.log(this.options), new Error("ScopeDom: late plugin adding is disabled, due to instance { allowLatePlugins:false }");
@@ -979,6 +1125,9 @@ class ScopeDom {
 		return true;
 	}
 	
+	/**
+	 * Initialize all plugins for this instance.
+	 */
 	initPlugins(){
 		if(this.plugins.init) return;
 		if(!this.options.allowLatePlugins) throw console.log(this.options), new Error("ScopeDom: late plugin adding is disabled, due to instance { allowLatePlugins:false }");
@@ -987,36 +1136,43 @@ class ScopeDom {
 	}
 	
 	/**
-	 * @param {pluginOnElementPlug} plugObj
+	 * Trigger all onConnect plugin callbacks.
+	 * @param {pluginOnElementPlug} plugObj The pluginOnElementPlug object
 	 */
 	pluginsOnConnect(plugObj){
 		for(let pluginOnConnect of this.plugins.onConnect) try{ pluginOnConnect(plugObj); }catch(err){ console.error(err); }
 	}
 	
 	/**
-	 * @param {pluginOnElementPlug} plugObj
+	 * Trigger all onDisconnect plugin callbacks.
+	 * @param {pluginOnElementPlug} plugObj The pluginOnElementPlug object
 	 */
 	pluginsOnDisconnect(plugObj){
 		for(let pluginOnDisconnect of this.plugins.onDisconnect) try{ pluginOnDisconnect(plugObj); }catch(err){ console.error(err); }
 	}
 	
 	/**
-	 * @param {pluginOnElementPlug} plugObj
+	 * Trigger all onPluginAdd plugin callbacks.
+	 * @param {pluginOnElementPlug} plugObj The pluginOnElementPlug object
 	 */
 	pluginsOnPluginAdd(plugObj){
 		for(let pluginOnPluginAdd of this.plugins.onPluginAdd) try{ pluginOnPluginAdd(plugObj); }catch(err){ console.error(err); }
 	}
 	
 	/**
-	 * @param {ElementExpression} expObj
+	 * Trigger all onExpression plugin callbacks.
+	 * @param {pluginOnElementExpression} expObj The pluginOnElementExpression object
 	 */
 	pluginsOnElementExpression(expObj){
 		for(let pluginOnExpression of this.plugins.onExpression) try{ pluginOnExpression(expObj); }catch(err){ console.error(err); }
 	}
 	
 	/**
-	 * @param {{ onConnect:Function }} plugin
-	 * @param {HTMLElement} element
+	 * Run onConnect for a late-added plugin on existing elements.
+	 * @param {{ onConnect:Function }} plugin The plugin with onConnect method
+	 * @param {HTMLElement} element The element to run connect on
+	 * @param {boolean} [act=true] Run onConnect for this plugin
+	 * @param {Set} [list] Internal accumulator list
 	 */
 	latePluginAdd_runConnect(plugin,element,act=true,list=new Set()){
 		if(!plugin || !this.plugins.init || !this.cacheConnectedNodes.has(element)) return;
@@ -1035,12 +1191,16 @@ class ScopeDom {
 	
 }
 
+/** @class pluginOnElementPlug
+ * Object passed to onConnect, onDisconnect and onPluginAdd for plugins.
+ */
 class pluginOnElementPlug {
 	/**
-	 * @param {ScopeDom} instance
-	 * @param {HTMLElement} element
-	 * @param {scopeElementController} elementScopeCtrl
-	 * @param {Map<string,scopeElementAttrib>} attribs
+	 * @constructor
+	 * @param {ScopeDom} instance The ScopeDom instance
+	 * @param {HTMLElement} element The element
+	 * @param {scopeElementController} elementScopeCtrl The scopeElementController
+	 * @param {Map<string,scopeElementAttrib>} attribs ScopeDom attributes
 	 */
 	constructor(instance,element,elementScopeCtrl,attribs){
 		this.instance = instance;
@@ -1050,12 +1210,16 @@ class pluginOnElementPlug {
 	}
 }
 
+/** @class pluginOnElementExpression
+ * Object passed to onExpression for plugins.
+ */
 class pluginOnElementExpression {
 	/**
-	 * @param {ScopeDom} instance
-	 * @param {HTMLElement} element
-	 * @param {scopeElementController} elementScopeCtrl
-	 * @param {Map<string,scopeElementAttrib>} attribs
+	 * @constructor
+	 * @param {ScopeDom} instance The ScopeDom instance
+	 * @param {HTMLElement} element The element
+	 * @param {scopeElementController} elementScopeCtrl The scopeElementController
+	 * @param {object} expObj ScopeDom expression object { expression, mainScopes, otherScopes, options }
 	 */
 	constructor(instance,element,elementScopeCtrl,expObj){
 		this.instance = instance;

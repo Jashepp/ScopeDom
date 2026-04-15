@@ -21,8 +21,26 @@ import { signalInstance, signalSymb } from "./instance.js";
 
 const spProxyMap = new WeakMap(), spTargetMap = new WeakMap();
 
+/**
+ * SignalProxy - Creates a deep reactive proxy for objects with automatic signal tracking.
+ *
+ * A signalProxy creates a proxy that automatically creates signalInstance and
+ * signalProxy for every property accessed, enabling infinitely deep reactivity.
+ * Each nested property becomes a signal that can be tracked and updated independently.
+ * The proxy supports arrays, Maps, Sets, and other iterable collections with special
+ * handling for their methods.
+ * @class signalProxy
+ */
 export class signalProxy {
 	
+	/**
+	 * Constructs a new signalProxy.
+	 * @param {object} target - Object to proxy
+	 * @param {signalController} signalCtrl - The parent signal controller
+	 * @param {signalInstance} [targetSignal=null] - Pre-existing signal for the target
+	 * @param {boolean} [useWeakRef=false] - Use WeakRef (defaults to true for nested proxies)
+	 * @returns {signalProxy} The created proxy, or the target if it's a primitive
+	 */
 	constructor(target,signalCtrl,targetSignal=null,useWeakRef=false){
 		if(spProxyMap.has(target)) return target;
 		if(spTargetMap.has(target)){ let p=spTargetMap.get(target); if(p && spProxyMap.has(p)) return p; }
@@ -37,10 +55,29 @@ export class signalProxy {
 		return proxy;
 	}
 	
+	/**
+	 * Checks if a value is an existing signalProxy.
+	 * @param {any} target - Value to check
+	 * @returns {boolean} True if the value is an existing signalProxy
+	 */
 	static _isProxy(target){ return spProxyMap.has(target); }
 	
+	/**
+	 * Gets the signalInstance associated with a signalProxy.
+	 * @param {signalProxy} target - The signalProxy
+	 * @returns {signalInstance} The associated signalInstance, or undefined
+	 */
 	static _getProxySignal(target){ return spProxyMap.get(target)?.targetSignal; }
 	
+	/**
+	 * Proxy handler for `has`.
+	 *
+	 * Checks if a property exists on the target.
+	 * Cleans up stale signals and proxies for properties that no longer exist.
+	 * @param {object} obj - The proxy object
+	 * @param {string} prop - Property name to check
+	 * @returns {boolean} True if the property exists
+	 */
 	static has = function signalProxyHas(obj,prop){
 		let { target, proxies, signals } = obj;
 		if(!target) return console.warn("ScopeDom signalProxy: has() called on proxy with gc'd target",{prop}), false;
@@ -50,6 +87,16 @@ export class signalProxy {
 		return hasProp;
 	}
 	
+	/**
+	 * Proxy handler for `get`.
+	 *
+	 * Returns the property value, creating a signal and/or nested proxy as needed.
+	 * @see signalProxy._handleTypesGet() - Handles special type-specific behavior for property access
+	 * @param {object} obj - The proxy object
+	 * @param {string} prop - Property name being accessed
+	 * @param {object} receiver - The receiver object
+	 * @returns {any} The property value or nested proxy
+	 */
 	static get = function signalProxyGet(obj,prop,receiver){
 		let getValue, { target, targetSignal, proxies, signalCtrl } = obj;
 		if(!target) return void console.warn("ScopeDom signalProxy: get() called on proxy with gc'd target",{prop});
@@ -67,6 +114,18 @@ export class signalProxy {
 		return proxies.set(prop,proxy), proxy;
 	}
 	
+	/**
+	 * Proxy handler for `set`.
+	 *
+	 * Sets the property value, creating a signal if needed.
+	 * Handles special cases for array length and indexed properties.
+	 * @see signalProxy._handleTypesSet() - Handles special type-specific behavior for property assignment
+	 * @param {object} obj - The proxy object
+	 * @param {string} prop - Property name being set
+	 * @param {any} value - Value to set
+	 * @param {object} receiver - The receiver object
+	 * @returns {boolean} True if the property was set successfully
+	 */
 	static set = function signalProxySet(obj,prop,value,receiver){
 		let getValue, { target, targetSignal, proxies } = obj;
 		if(!target) return console.warn("ScopeDom signalProxy: set() called on proxy with gc'd target",{prop}), false;
@@ -82,6 +141,16 @@ export class signalProxy {
 		return false;
 	}
 	
+	/**
+	 * Handles special type-specific behavior for property access.
+	 *
+	 * For iterables (Arrays, Maps, Sets), records dependencies for index access, length/size properties, and method calls.
+	 * For functions, returns a wrapper that handles signal tracking.
+	 * @param {object} obj - The proxy object
+	 * @param {string} prop - Property name being accessed
+	 * @param {any} getValue - The property value
+	 * @returns {[any, boolean]} Tuple of [value to return, return immediately]
+	 */
 	static _handleTypesGet(obj,prop,getValue){
 		let { target, targetSignal, signalCtrl, isIterable } = obj;
 		if(isIterable && targetSignal){
@@ -124,6 +193,16 @@ export class signalProxy {
 		return [ getValue, false ];
 	}
 	
+	/**
+	 * Handles special type-specific behavior for property assignment.
+	 *
+	 * Marks the target signal as changed for array length and indexed property assignments.
+	 * @param {object} obj - The proxy object
+	 * @param {string} prop - Property name being set
+	 * @param {any} getValue - Current property value
+	 * @param {any} value - New value being set
+	 * @returns {any} The value to set
+	 */
 	static _handleTypesSet(obj,prop,getValue,value){
 		let { target, targetSignal, isIterable } = obj;
 		if(isIterable && targetSignal && target instanceof Array && prop==='length') targetSignal.changed();
@@ -131,6 +210,14 @@ export class signalProxy {
 		return value;
 	}
 	
+	/**
+	 * Ensures a signal exists for a property, creates one if needed.
+	 * @param {object} obj - The proxy object
+	 * @param {string} prop - Property name
+	 * @param {any} [currentValue=void 0] - Current property value
+	 * @param {any} [newValue=currentValue] - New property value
+	 * @returns {signalInstance} The signal for the property
+	 */
 	static _proxyEnsureSignal(obj,prop,currentValue=void 0,newValue=currentValue){
 		let signal, { target, signals, signalCtrl } = obj;
 		if(signals.has(prop)) return signals.get(prop);
@@ -142,12 +229,29 @@ export class signalProxy {
 		return signal;
 	}
 	
+	/**
+	 * Proxy handler for property deletion.
+	 *
+	 * Deletes the property from the target and cleans up associated signals and proxies.
+	 * @param {object} obj - The proxy object
+	 * @param {string} prop - Property name to delete
+	 * @returns {boolean} True if the property was deleted
+	 */
 	static deleteProperty(obj,prop){
 		let { target, proxies, signals } = obj;
 		if(!target) return void console.warn("ScopeDom signalProxy: deleteProperty() called on proxy with gc'd target",{prop});
 		return proxies.delete(prop), signals.delete(prop), Reflect.deleteProperty(target,prop);
 	}
 	
+	/**
+	 * Proxy handler for the 'new' operator.
+	 *
+	 * Creates a new instance using the target constructor and returns a proxy for the result.
+	 * @param {object} obj - The proxy object
+	 * @param {any[]} argumentsList - Arguments to pass to the constructor
+	 * @param {Function} newTarget - The new target constructor
+	 * @returns {signalProxy} A proxy for the created instance
+	 */
 	static construct(obj,argumentsList,newTarget){
 		let { target, targetSignal, signalCtrl } = obj;
 		if(!target) return void console.warn("ScopeDom signalProxy: construct() called on proxy with gc'd target",{argumentsList});
@@ -155,6 +259,15 @@ export class signalProxy {
 		return new signalProxy(Reflect.construct(target,argumentsList,newTarget),signalCtrl);
 	}
 	
+	/**
+	 * Proxy handler for function calls.
+	 *
+	 * Applies the target function with the given arguments and returns a proxy for the result if it's an object.
+	 * @param {object} obj - The proxy object
+	 * @param {any} thisArgument - The this value for the function call
+	 * @param {any[]} argumentsList - Arguments to pass to the function
+	 * @returns {any} The function result or a proxy for it
+	 */
 	static apply = function signalProxyApply(obj,thisArgument,argumentsList){
 		let { target, targetSignal, signalCtrl } = obj;
 		if(!target) return void console.warn("ScopeDom signalProxy: apply() called on proxy with gc'd target",{thisArgument,argumentsList});
@@ -166,27 +279,75 @@ export class signalProxy {
 		return new signalProxy(result,signalCtrl);
 	}
 	
+	/**
+	 * Proxy handler for Object.defineProperty.
+	 * 
+	 * TODO: getter & setter may bypass signalProxy
+	 * @param {object} obj - The proxy object
+	 * @param {string} prop - Property name
+	 * @param {PropertyDescriptor} attributes - Property descriptor
+	 * @returns {boolean} True if the property was defined
+	 */
 	static defineProperty(obj,prop,attributes){ return Reflect.defineProperty(obj.target,prop,attributes); }
 	
+	/**
+	 * Proxy handler for Reflect.getOwnPropertyDescriptor.
+	 * 
+	 * TODO: getter may bypass signalProxy
+	 * @param {object} obj - The proxy object
+	 * @param {string} prop - Property name
+	 * @returns {PropertyDescriptor} The property descriptor
+	 */
 	static getOwnPropertyDescriptor(obj,prop){ Reflect.getOwnPropertyDescriptor(obj.target,prop); }
 	
+	/**
+	 * Proxy handler for Object.setPrototypeOf.
+	 * @param {object} obj - The proxy object
+	 * @param {object} prototype - The new prototype
+	 * @returns {boolean} True if the prototype was set
+	 */
 	static setPrototypeOf(obj,prototype){ return Reflect.setPrototypeOf(obj.target,prototype); }
 	
+	/**
+	 * Proxy handler for Object.getPrototypeOf.
+	 * @param {object} obj - The proxy object
+	 * @returns {object} The prototype of the target
+	 */
 	static getPrototypeOf(obj){ return getPrototypeOf(obj.target); }
 	
+	/**
+	 * Proxy handler for Object.isExtensible.
+	 * @param {object} obj - The proxy object
+	 * @returns {boolean} True if the target is extensible
+	 */
 	static isExtensible(obj){ return Reflect.isExtensible(obj.target); }
 	
+	/**
+	 * Proxy handler for Reflect.ownKeys.
+	 * @param {object} obj - The proxy object
+	 * @returns {string[]} Array of the target's own property keys
+	 */
 	static ownKeys(obj){ return Reflect.ownKeys(obj.target); }
 	
+	/**
+	 * Proxy handler for Object.preventExtensions.
+	 * @param {object} obj - The proxy object
+	 * @returns {boolean} True if the target was made non-extensible
+	 */
 	static preventExtensions(obj){ return Reflect.preventExtensions(obj.target); }
 }
 
 /**
- * Resolve (& record) a signalProxy to it's signalInstance
- * @param {signalProxy|signalInstance|any} value Value
- * @param {signalObserver=} signalObs Signal Observer
- * @param {boolean=} strict Only return signalInstance or null, not the value
- * @returns {signalInstance|null} If strict, resolved signalInstance or null. Else resolved signalInstance value or passed value.
+ * Resolves a signalProxy or signalInstance to its signalInstance or signal value.
+ *
+ * This function handles three cases:
+ * 1. If the value is a signalProxy, continue with value as a signalInstance.
+ * 2. If the value is a signalInstance, optionally record it and return it.
+ * 3. If strict=false, the returned value is the signal value.
+ * @param {signalProxy|signalInstance|any} value - Value to resolve
+ * @param {signalObserver} [signalObs=null] - Optional signalObserver to record the signal
+ * @param {boolean} [strict=false] - If true, only return signalInstance or null
+ * @returns {signalInstance|any} Resolved signalInstance, its value, or the original value
  */
 export const resolveSignal = function(value,signalObs=null,strict=false){
 	if(signalProxy._isProxy(value)) value = signalProxy._getProxySignal(value);
