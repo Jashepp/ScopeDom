@@ -79,7 +79,7 @@ export class pluginIf {
 		let state = this.stateMap.get(element);
 		if(!state) return;
 		let removeState=true, removeEvents=true;
-		let { isOnlyMatch, anchor, defaultDisplay, isTemplate, tplAnchorStart, tplAnchorEnd } = state;
+		let { signalObs, isOnlyMatch, anchor, defaultDisplay, isTemplate, tplAnchorStart, tplAnchorEnd } = state;
 		let anchorDC = (element===anchor || element===tplAnchorStart || element===tplAnchorEnd);
 		if(anchorDC) element = state.element;
 		let ranOnce = this._hasRanOnce(state);
@@ -137,6 +137,8 @@ export class pluginIf {
 			for(let removeEvent of set) removeEvent();
 			this.eventMap.delete(element);
 		}
+		// Cleanup signalObserver
+		if(removeEvents && signalObs){ signalObs.clear(); state.signalObs=null; }
 	}
 	
 	_setupIf(plugInfo,ifAttribs){
@@ -263,24 +265,25 @@ export class pluginIf {
 			for(let s of depList) if(s.exec && s.showing){ result=false; break; }
 			if((ifElseValue===null || ifCaseValue===null) && result===null){ result = true; } // Empty if-else or if-case
 		}
-		// Build Exec for On Show / On Hide
+		// Setup signalObserver
+		if(!signalObs){
+			let self=this; signalObs = state.signalObs = (signalObs || state.signalCtrl.createObserver());
+			signalObs.addListener(function pluginIf_signalObserver(){
+				let updateIndex = state.updateIndex;
+				self.ScopeDom.animFrameHelper.onceRAF(state,signalObs,function pluginIf_signalObserver_RAF(){
+					if(state.updateIndex!==updateIndex) return;
+					signalObs.clearSignals();
+					self._runIfExpressions(plugInfo,attrib,state,exp,runMatch,true);
+				});
+			});
+		}
+		// Build Exec for On Show / On Hide - no signalObserver for these
 		if(onShowEvent?.length>0 && !state.onShowExec) state.onShowExec = this._execExpression(plugInfo,onShowEvent,false);
 		if(onHideEvent?.length>0 && !state.onHideExec) state.onHideExec = this._execExpression(plugInfo,onHideEvent,false);
 		// Build / Run Expression
 		if(result===null){
 			let execExtra = null;
 			if(exp?.length>0 && ifCaseValue?.length>0 && ifCaseValue===exp) execExtra = matchCaseScope;
-			if(!signalObs){
-				signalObs = state.signalObs = (signalObs || state.signalCtrl.createObserver());
-				let self=this; signalObs.addListener(function pluginIf_signalObserver(){
-					let updateIndex = state.updateIndex;
-					self.ScopeDom.animFrameHelper.onceRAF(element,signalObs,function pluginIf_signalObserver_RAF(){
-						if(state.updateIndex!==updateIndex) return;
-						signalObs.clearSignals();
-						self._runIfExpressions(plugInfo,attrib,state,exp,runMatch,true);
-					});
-				});
-			}
 			if(!exec) exec = state.exec = this._execExpression(plugInfo,exp,true,execExtra,signalObs);
 			result = element.$ifResult = exec.runFn();
 		}
