@@ -608,7 +608,11 @@ export class pluginParse {
 			else obj.foundWithin = 0;
 		}
 		// Update Result
-		if(current!==result){ if(isHTML) element.innerHTML=result; else element.textContent=result; }
+		if(current!==result){
+			if(isHTML && hasSetHTML) element.setHTML(result);
+			else if(isHTML) element.innerHTML = result;
+			else element.textContent = result;
+		}
 	}
 	
 }
