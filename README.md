@@ -2,7 +2,8 @@
 
 **ScopeDom is a Reactive DOM Orchestrator.**
 
-Most modern frameworks attempt to manage the DOM by creating a complex, virtual representation of it. **ScopeDom does the opposite — it makes the DOM itself intelligent.**
+Most modern frameworks attempt to manage the DOM by creating a complex, virtual representation of it.\
+**ScopeDom does the opposite — it makes the DOM itself intelligent.**
 
 By leveraging native Web APIs — specifically Proxies, WeakMaps and MutationObservers — ScopeDom turns standard HTML attributes into **reactive, scoped expressions**. It doesn't try to replace the browser; **it orchestrates it**.
 
