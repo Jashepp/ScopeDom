@@ -71,7 +71,7 @@ export class execExpression {
 		+	`let $sdcScope,arguments,constructor;`
 		+	`return${useAsync ? "(async " : "(" }function ${fnName}(){`
 		+		`${strictMode ? "\"use strict\";" : ""}${useAsync ? "let $sdcCatchError;" : ""}`
-		+		(useReturn ? `return (\n\n${expression}\n\n/**/);` : `\n\n${expression}\n\n/**/`)
+		+		(useReturn ? `return (\n\n${expression}\n\n);` : `\n\n${expression};\n\n/**/`)
 		+	`}).apply(this)${useAsync?".catch($sdcCatchError);":";"}`
 		+`}`;
 		return fnCode;
@@ -335,12 +335,21 @@ export class execExpressionProxy {
 	 * @returns {any} Property value
 	 */
 	static _getResolve = function execExpGetResolve(obj,target,prop,receiver=target){
-		let value = Reflect.get(target,prop,receiver);
+		let value = Reflect.get(target,prop,target);
 		if(obj.useSignalProxy && obj.scopeCtrl?.signalCtrl){
-			let isSignal, descriptor = getOwnPropertyDescriptor(target,prop);
-			if(descriptor?.value instanceof signalInstance) isSignal = true;
-			else if(descriptor?.get?.[signalSymb] instanceof signalInstance) isSignal = true;
-			if(descriptor && !isSignal && value===Object(value)) return obj.scopeCtrl.signalCtrl.defineProxySignal(target,prop,value);
+			let signal, descriptor = getOwnPropertyDescriptor(target,prop);
+			if(target instanceof signalInstance) target = target.get();
+			if(value instanceof signalInstance) signal = value;
+			else if(descriptor?.value instanceof signalInstance) signal = descriptor?.value;
+			else if(descriptor?.get?.[signalSymb] instanceof signalInstance) signal = descriptor?.get?.[signalSymb];
+			// If no signal, and value isn't primitive, define signalProxy
+			if(descriptor?.configurable && !signal && value===Object(value)){
+				return obj.scopeCtrl.signalCtrl.defineProxySignal(target,prop,value);
+			}
+			// If value===signal, use signal
+			if(descriptor && value===signal){
+				return signal;
+			}
 		}
 		return value;
 	}
@@ -357,8 +366,9 @@ export class execExpressionProxy {
 	 */
 	static _setResolve = function execExpSetResolve(obj,target,prop,value,receiver=target){
 		let descriptor = getOwnPropertyDescriptor(target,prop);
+		if(descriptor?.set?.[signalSymb] instanceof signalInstance) return descriptor.set(value), true;
 		if(descriptor?.value instanceof signalInstance) return descriptor.value.set(value), true;
-		return Reflect.set(target,prop,value,receiver);
+		return Reflect.set(target,prop,value,target);
 	}
 	
 }

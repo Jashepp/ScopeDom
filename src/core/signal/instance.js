@@ -52,6 +52,12 @@ export class signalInstance {
 	}
 	
 	/**
+	 * Get parent signalController
+	 * @return {signalController} The signalController
+	 */
+	get ctrl(){ return this.#ctrl; }
+	
+	/**
 	 * Internal getter/setter for the signal value.
 	 *
 	 * getter: Returns the dereferenced value if using WeakRef, otherwise returns the raw value.
@@ -158,7 +164,7 @@ export class signalInstance {
 		if(v instanceof signalInstance) v = v.get();
 		let oldValue = this.#value, newValue = v;
 		if(oldValue===newValue) return;
-		let oldPromise = this.#promise, isPromise = (v instanceof Promise || typeof v?.then==="function");
+		let oldPromise = this.#promise, isPromise = (v instanceof Promise || ('then' in Object(v) && typeof v?.then==="function"));
 		if(isPromise){
 			if(oldPromise===newValue) return;
 			this.#setFn(newValue);

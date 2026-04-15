@@ -64,10 +64,17 @@ export class signalProxy {
 	
 	/**
 	 * Gets the signalInstance associated with a signalProxy.
-	 * @param {signalProxy} target - The signalProxy
+	 * @param {signalProxy} proxy - The signalProxy
 	 * @returns {signalInstance} The associated signalInstance, or undefined
 	 */
-	static _getProxySignal(target){ return spProxyMap.get(target)?.targetSignal; }
+	static _getProxySignal(proxy){ return spProxyMap.get(proxy)?.targetSignal; }
+	
+	/**
+	 * Gets the target for a signalProxy.
+	 * @param {signalProxy} proxy - The signalProxy
+	 * @returns {any} The target object
+	 */
+	static _getProxyTarget(proxy){ return spProxyMap.get(proxy)?.target; }
 	
 	/**
 	 * Proxy handler for `has`.
@@ -94,14 +101,14 @@ export class signalProxy {
 	 * @see signalProxy._handleTypesGet() - Handles special type-specific behavior for property access
 	 * @param {object} obj - The proxy object
 	 * @param {string} prop - Property name being accessed
-	 * @param {object} receiver - The receiver object
+	 * @param {object} receiver - The receiver object (not used)
 	 * @returns {any} The property value or nested proxy
 	 */
 	static get = function signalProxyGet(obj,prop,receiver){
 		let getValue, { target, targetSignal, proxies, signalCtrl } = obj;
 		if(!target) return void console.warn("ScopeDom signalProxy: get() called on proxy with gc'd target",{prop});
 		if(!signalProxy.has(obj,prop)) return void signalProxy._proxyEnsureSignal(obj,prop,void 0).get();
-		try{ getValue = Reflect.get(target,prop,receiver); }catch(err){ getValue = target[prop]; }
+		try{ getValue = Reflect.get(target,prop,target); }catch(err){ getValue = target[prop]; }
 		let returnNow; [ getValue, returnNow ] = signalProxy._handleTypesGet(obj,prop,getValue);
 		if(returnNow) return getValue;
 		let isPrimitive = getValue!==Object(getValue);
@@ -123,16 +130,16 @@ export class signalProxy {
 	 * @param {object} obj - The proxy object
 	 * @param {string} prop - Property name being set
 	 * @param {any} value - Value to set
-	 * @param {object} receiver - The receiver object
+	 * @param {object} receiver - The receiver object (not used)
 	 * @returns {boolean} True if the property was set successfully
 	 */
 	static set = function signalProxySet(obj,prop,value,receiver){
 		let getValue, { target, targetSignal, proxies } = obj;
 		if(!target) return console.warn("ScopeDom signalProxy: set() called on proxy with gc'd target",{prop}), false;
-		try{ getValue = Reflect.get(target,prop,receiver); }catch(err){ getValue = target[prop]; }
+		try{ getValue = Reflect.get(target,prop,target); }catch(err){ getValue = target[prop]; }
 		value = resolveSignal(value);
 		value = signalProxy._handleTypesSet(obj,prop,getValue,value);
-		if(Reflect.set(target,prop,value,receiver)){
+		if(Reflect.set(target,prop,value,target)){
 			let signal = signalProxy._proxyEnsureSignal(obj,prop,getValue,value);
 			signal.set(value);
 			if(proxies.has(prop) && value!==getValue) proxies.delete(prop);
@@ -353,7 +360,10 @@ export const resolveSignal = function(value,signalObs=null,strict=false){
 	if(signalProxy._isProxy(value)) value = signalProxy._getProxySignal(value);
 	if(value instanceof signalInstance){
 		if(signalObs) signalObs.recordSignal(value);
-		if(!strict) value = value.get();
+		if(!strict){
+			value = value.get();
+			if(signalProxy._isProxy(value)) value = signalProxy._getProxyTarget(value);
+		}
 	}
 	if(strict && !(value instanceof signalInstance)) return null;
 	return value;
