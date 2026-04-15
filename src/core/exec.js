@@ -346,10 +346,6 @@ export class execExpressionProxy {
 			if(descriptor?.configurable && !signal && value===Object(value)){
 				return obj.scopeCtrl.signalCtrl.defineProxySignal(target,prop,value);
 			}
-			// If value===signal, use signal
-			if(descriptor && value===signal){
-				return signal;
-			}
 		}
 		return value;
 	}
