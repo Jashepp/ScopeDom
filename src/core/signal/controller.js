@@ -50,6 +50,7 @@ export class signalController {
 	}
 	
 	triggerChange(signal,oldValue,newValue){
+		if(oldValue===void 0 && oldValue===newValue) oldValue = newValue = signal.getSilent();
 		if(!(signal instanceof signalInstance)) throw new TypeError("triggerChange signal must be a signalInstance");
 		if(!this.#preventUpdates) for(let observer of this.#observers) if(observer.hasSignal(signal)) observer.triggerChange(signal,oldValue,newValue);
 	}
@@ -110,6 +111,7 @@ export class signalController {
 	}
 	
 	// Signal Helper Methods
+	
 	/**
 	 * Create signalInstance & record it immediately to any recording signalObserver.
 	 * @param {any} value Signal value
@@ -165,7 +167,7 @@ export class signalController {
 	 * @param {object=} options { defer:true|false }
 	 * @returns {Array<signalInstance,signalObserver,Function>} [ signalInstance, signalObserver, clear() ]
 	 */
-	computeSignalPush(fn,options={}){ // [ signal, observer, clear() ]
+	computeSignalPush(fn,options={}){
 		if(!(fn instanceof Function)) throw new TypeError("computeSignalPush fn must be a Function (callback)");
 		let signal = options?.signal || this.createSignal(void 0);
 		let obs = this.createObserver(options);
@@ -177,7 +179,9 @@ export class signalController {
 		};
 		obs.addListener(runFn);
 		try{ runFn(obs,null); } catch(err){ console.error(err); }
-		return [ signal, obs, obs.clear.bind(obs) ];
+		let result = [ signal, obs, obs.clear.bind(obs) ];
+		if(Symbol.dispose) result[Symbol.dispose] = result[2];
+		return result;
 	}
 	
 	/**
@@ -186,7 +190,7 @@ export class signalController {
 	 * @param {object=} options { defer:true|false }
 	 * @returns {Array<signalInstance,signalObserver,Function>} [ signalInstance, signalObserver, clear() ]
 	 */
-	computeSignalPull(fn,options={}){ // [ signal, observer, clear() ]
+	computeSignalPull(fn,options={}){
 		if(!(fn instanceof Function)) throw new TypeError("computeSignalPull fn must be a Function (callback)");
 		let signal = options?.signal || this.createSignal(void 0);
 		let obs = this.createObserver(options);
@@ -196,7 +200,7 @@ export class signalController {
 			if(isUpdating) return;
 			isUpdating = true;
 			signal.invalidatePull();
-			signal.markChanged();
+			signal.changed(true);
 			isUpdating = false;
 		};
 		let recordingFn = this.isolateRecording(obs.wrapRecorder(fn));
@@ -206,7 +210,9 @@ export class signalController {
 		});
 		obs.addListener(updateFn);
 		signal.invalidatePull();
-		return [ signal, obs, obs.clear.bind(obs) ];
+		let result = [ signal, obs, obs.clear.bind(obs) ];
+		if(Symbol.dispose) result[Symbol.dispose] = result[2];
+		return result;
 	}
 	
 	/**
@@ -231,7 +237,7 @@ export class signalController {
 	 * @returns {any} Proxy of passed in value
 	 */
 	proxySignal(value,signal=null,useWeakRef=false){
-		if(value!==Object(value)) throw new TypeError("proxySignal root value must not be a primitive");
+		if(value!==Object(value)) throw new TypeError("proxySignal target must not be a primitive");
 		return new signalProxy(value,this,signal,useWeakRef);
 	}
 	
@@ -245,7 +251,7 @@ export class signalController {
 	 * @returns {any} Proxy of passed in value
 	 */
 	defineProxySignal(obj,prop,value,signal=null){
-		if(value!==Object(value)) throw new TypeError("defineProxySignal root value must not be a primitive, try defineSignal instead");
+		if(value!==Object(value)) throw new TypeError("defineProxySignal target must not be a primitive, try defineSignal instead");
 		if(!signal) signal = new signalInstance(this,value);
 		let proxy = new signalProxy(value,this,signal);
 		let sGet = ()=>(signal.record(),proxy), sSet = (v)=>{ this.defineProxySignal(obj,prop,v,signal); };

@@ -1,11 +1,15 @@
 "use strict";
 
-const isTextNodeSolid = (()=>{
-	let e=document.createElement('div'), tn=document.createTextNode('text'); e.appendChild(tn);
-	return function isTextNodeSolid(data){ tn.data=data; return e.innerText.length>0; };
-})();
 const elementNodeType = document.ELEMENT_NODE;
 const textNodeType = document.TEXT_NODE;
+let isTextNodeSolid = null;
+let hasSetHTML = false;
+
+(()=>{
+	let e=document.createElement('div'), tn=document.createTextNode('text'); e.appendChild(tn);
+	isTextNodeSolid = function isTextNodeSolid(data){ tn.data=data; return e.innerText.length>0 && (tn.data='',!0); };
+	hasSetHTML = 'setHTML' in e && typeof e.setHTML==='function';
+})();
 
 export class pluginParse {
 	get name(){ return 'parse'; }

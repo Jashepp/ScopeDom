@@ -39,8 +39,9 @@ export class signalObserver {
 		if(!this.signals.has(signal) && !this.signalsIgnore.has(signal)) this.signals.add(signal);
 	}
 	
-	triggerChange(signal,oldValue,newValue){
-		if(this.isRecording || !this.signals.has(signal)) return;
+	triggerChange(signal,oldValue,newValue,forceDefer=false){
+		if(this.isDeferring || this.isRecording) return;
+		if(this.isChanging || !this.signals.has(signal)) forceDefer = true;
 		let self=this;
 		function signalObserverListener(fn){ fn(self,signal,oldValue,newValue); };
 		function signalObserverTrigger(){
@@ -50,8 +51,7 @@ export class signalObserver {
 			for(let fn of self.listeners) try{ signalObserverListener(fn); } catch(err){ console.error(err); }
 			self.isChanging = false;
 		}
-		if(!this.deferChange) return signalObserverTrigger();
-		if(this.isDeferring) return;
+		if(!this.deferChange && !forceDefer) return signalObserverTrigger();
 		this.isDeferring = true;
 		deferFn(signalObserverTrigger);
 	}
@@ -81,8 +81,11 @@ export class signalObserver {
 	}
 	
 	addListener(fn){ this.listeners.add(fn); return this.removeListener.bind(this,fn); }
+	
 	removeListener(fn){ this.listeners.delete(fn); }
+	
 	clear(){ this.listeners.clear(); this.signals=new WeakSet(); this.ctrl.removeObserver(this,false); }
+	
 	clearSignals(){ this.signals=new WeakSet(); }
 }
 

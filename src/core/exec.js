@@ -105,8 +105,8 @@ export class execExpression {
 	 * @param {execExpOptions|object|null} fnOptions
 	 * @returns {execExpInstance}
 	 */
-	static runExp(expression,mainScopes,extraScopes=[],fnOptions={}){
-		let exec = execExpression.buildExp(expression,mainScopes,extraScopes,fnOptions);
+	static runExp(expression,mainScopes,extraScopes=[],options={}){
+		let exec = execExpression.buildExp(expression,mainScopes,extraScopes,options);
 		let { runFn, logFnError, options:{ useAsync, run } } = exec;
 		if(run===false) return exec;
 		exec.result = runFn();
@@ -207,9 +207,13 @@ export class execExpressionProxy {
 	}
 	
 	static construct(obj,argumentsList,newTarget){}
+	
 	static apply(obj,thisArgument,argumentsList){}
+	
 	static setPrototypeOf(obj,prototype){ return false; }
+	
 	static getPrototypeOf(obj){ return getPrototypeOf(obj.mainScopes[0]); }
+	
 	static preventExtensions(obj){ return false; }
 	
 	static _getResolve = function execExpGetResolve(obj,target,prop,receiver=target){

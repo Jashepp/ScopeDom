@@ -20,6 +20,7 @@ import { signalObserver } from "./observer.js";
 import { signalInstance, signalSymb } from "./instance.js";
 
 const spProxyMap = new WeakMap(), spTargetMap = new WeakMap();
+
 export class signalProxy {
 	
 	constructor(target,signalCtrl,targetSignal=null,useWeakRef=false){
@@ -37,6 +38,7 @@ export class signalProxy {
 	}
 	
 	static _isProxy(target){ return spProxyMap.has(target); }
+	
 	static _getProxySignal(target){ return spProxyMap.get(target)?.targetSignal; }
 	
 	static has = function signalProxyHas(obj,prop){
@@ -83,7 +85,7 @@ export class signalProxy {
 	static _handleTypesGet(obj,prop,getValue){
 		let { target, targetSignal, signalCtrl, isIterable } = obj;
 		if(isIterable && targetSignal){
-			if(target instanceof Array && prop===Symbol.iterator) targetSignal.record();
+			if(prop===Symbol.iterator) targetSignal.record(); // TODO - wrapper
 			else if(prop*1>=0) targetSignal.record();
 			else if(target instanceof Array && prop==='length') targetSignal.record();
 			else if(target instanceof Map && prop==='size') targetSignal.record();
@@ -114,19 +116,21 @@ export class signalProxy {
 		}
 		if(wrapChangeFn) return [ function signalProxyFnWrapperChange(...args){
 			let result = signalProxy.apply({ target:getValue, targetSignal, signalCtrl },target,args);
-			return targetSignal.markChanged(), result;
+			return targetSignal.changed(), result;
 		}, true ];
 		else if(wrapRecordFn) return [ function signalProxyFnWrapperRecord(...args){
 			return signalProxy.apply({ target:getValue, targetSignal, signalCtrl },target,args);
 		}, true ];
 		return [ getValue, false ];
 	}
+	
 	static _handleTypesSet(obj,prop,getValue,value){
 		let { target, targetSignal, isIterable } = obj;
-		if(isIterable && targetSignal && target instanceof Array && prop==='length') targetSignal.markChanged();
-		else if(isIterable && targetSignal && prop*1>=0) targetSignal.markChanged();
+		if(isIterable && targetSignal && target instanceof Array && prop==='length') targetSignal.changed();
+		else if(isIterable && targetSignal && prop*1>=0) targetSignal.changed();
 		return value;
 	}
+	
 	static _proxyEnsureSignal(obj,prop,currentValue=void 0,newValue=currentValue){
 		let signal, { target, signals, signalCtrl } = obj;
 		if(signals.has(prop)) return signals.get(prop);
@@ -143,12 +147,14 @@ export class signalProxy {
 		if(!target) return void console.warn("ScopeDom signalProxy: deleteProperty() called on proxy with gc'd target",{prop});
 		return proxies.delete(prop), signals.delete(prop), Reflect.deleteProperty(target,prop);
 	}
+	
 	static construct(obj,argumentsList,newTarget){
 		let { target, targetSignal, signalCtrl } = obj;
 		if(!target) return void console.warn("ScopeDom signalProxy: construct() called on proxy with gc'd target",{argumentsList});
 		if(targetSignal) targetSignal.record();
 		return new signalProxy(Reflect.construct(target,argumentsList,newTarget),signalCtrl);
 	}
+	
 	static apply = function signalProxyApply(obj,thisArgument,argumentsList){
 		let { target, targetSignal, signalCtrl } = obj;
 		if(!target) return void console.warn("ScopeDom signalProxy: apply() called on proxy with gc'd target",{thisArgument,argumentsList});
@@ -161,11 +167,17 @@ export class signalProxy {
 	}
 	
 	static defineProperty(obj,prop,attributes){ return Reflect.defineProperty(obj.target,prop,attributes); }
+	
 	static getOwnPropertyDescriptor(obj,prop){ Reflect.getOwnPropertyDescriptor(obj.target,prop); }
+	
 	static setPrototypeOf(obj,prototype){ return Reflect.setPrototypeOf(obj.target,prototype); }
+	
 	static getPrototypeOf(obj){ return getPrototypeOf(obj.target); }
+	
 	static isExtensible(obj){ return Reflect.isExtensible(obj.target); }
+	
 	static ownKeys(obj){ return Reflect.ownKeys(obj.target); }
+	
 	static preventExtensions(obj){ return Reflect.preventExtensions(obj.target); }
 }
 

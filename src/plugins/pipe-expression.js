@@ -168,11 +168,11 @@ export class pluginPipeExp {
 				break;
 			}
 		}
-		if(type===1) throw new Error("SyntaxError: Unfinished String");
-		if(type===2) throw new Error("SyntaxError: Unfinished Template Literal");
-		if(stack.length>1) throw new Error("SyntaxError: Unfinished Template Literal Expression");
-		if(stack[0]?.closureCount>0) throw new Error("SyntaxError: Unfinished Closure");
-		if(stack[0]?.bracketCount>0) throw new Error("SyntaxError: Unfinished Brackets");
+		if(type===1) throw new SyntaxError("SyntaxError: Unfinished String");
+		if(type===2) throw new SyntaxError("SyntaxError: Unfinished Template Literal");
+		if(stack.length>1) throw new SyntaxError("SyntaxError: Unfinished Template Literal Expression");
+		if(stack[0]?.closureCount>0) throw new SyntaxError("SyntaxError: Unfinished Closure");
+		if(stack[0]?.bracketCount>0) throw new SyntaxError("SyntaxError: Unfinished Brackets");
 		return positions;
 	}
 	

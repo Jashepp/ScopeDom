@@ -63,6 +63,7 @@ const scopeElementAttribDefaults = {
 	/** @type {Map<string,scopeElementAttribOption>|null} */
 	options: null,
 };
+
 /** @template {object} scopeElementAttribOption */
 const scopeElementAttribOptionDefaults = {
 	isDefault: false,
@@ -362,9 +363,9 @@ class ScopeDom {
 	 * @param {Function} cb Callback
 	 * @param {boolean=} delay Defer microtask or run instantly
 	 */
-	onDOMReady(cb,delay=true){
+	onDOMReady(cb,defer=true){
 		if(this.onDOMReadyListeners) this.onDOMReadyListeners.add(cb);
-		else if(delay) deferFn(cb);
+		else if(defer) deferFn(cb);
 		else cb();
 	}
 	
@@ -591,7 +592,6 @@ class ScopeDom {
 	 */
 	elementScopeSetAlias(toElement,fromElement){
 		// Element Scopes
-		//let fromScopeList = this.elementExtraScopes.get(fromElement);
 		let toScopeList = this.elementExtraScopes.get(toElement);
 		if(!toScopeList) this.elementExtraScopes.set(toElement,[fromElement]);
 		else if(toScopeList.indexOf(fromElement)===-1) toScopeList.push(fromElement);

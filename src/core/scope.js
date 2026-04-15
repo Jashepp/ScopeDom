@@ -25,7 +25,7 @@ export class scopeInstance {
 			Object.setPrototypeOf(scopeObj,new scopeBase());
 			mainObj = scopeObj;
 		}
-		// If scopeObj is something ele, change this scopeInstance proto to the scopeObj
+		// If scopeObj is something else, change this scopeInstance proto to the scopeObj
 		else Object.setPrototypeOf(this,scopeObj);
 		// Add methods
 		Object.defineProperties(mainObj,{
@@ -45,22 +45,38 @@ export class scopeBase {
 }
 
 const scSymb = Symbol('$scopeControllerContext');
+
 export class scopeControllerContext {
 	constructor(scopeCtrl){ this[scSymb]=scopeCtrl; }
+	
 	get $scope(){ return this[scSymb].scope; };
+	
 	$update(suffix=''){ return this[scSymb].$emitScopeUpdate(suffix); };
+	
 	$off(name=null,listener=null,options=null){ return this[scSymb].$off(name,listener,options); };
+	
 	$on(name,listener,options={},returnRemove=false){ return this[scSymb].$on(name,listener,options,returnRemove); };
+	
 	$once(name,listener,options={},returnRemove=false){ return this[scSymb].$once(name,listener,options,returnRemove); };
+	
 	$emit(name,detail=null,options=null){ return this[scSymb].$emit(name,detail,options); };
+	
 	$emitRAF(name,detail=null,options=null,uniqueID=this.$attribute||'$emitRAF:scc'){ return animFrameHelper.onceRAF(this.$this||this[scSymb].scope,uniqueID+':'+name,()=>this[scSymb].$emit(name,detail,options)); };
+	
 	$onRAF(cb){ return animFrameHelper.requestAF(cb); };
+	
 	$onceRAF(cb,uniqueID=this.$attribute||'$onceRAF:scc'){ return animFrameHelper.onceRAF(this.$this||this[scSymb].scope,uniqueID,cb); };
+	
 	$offTarget(target,name=null,listener=null,options=null){ return this[scSymb].$offTarget(target,name,listener,options); };
+	
 	$onTarget(target,name,listener,options={},returnRemove=false){ return this[scSymb].$onTarget(target,name,listener,options,returnRemove); };
+	
 	$onceTarget(target,name,listener,options={},returnRemove=false){ return this[scSymb].$onceTarget(target,name,listener,options,returnRemove); };
+	
 	$emitTarget(target,name,detail=null,options=null){ return this[scSymb].$emitTarget(target,name,detail,options); };
-	$signal(value=void 0){ return this[scSymb].$createSignal(value); } // signalInstance
+	
+	$signal(value=void 0){ return this[scSymb].$createSignal(value); }
+	
 }
 
 export class scopeController {
@@ -134,7 +150,9 @@ export class scopeController {
 	$onTarget(target,name,listener,options={},returnRemove=false){
 		options = { __proto__:null, capture:true, passive:false, ...options };
 		this.eventRegistry.add(target,name,listener,options);
-		if(returnRemove) return this.eventRegistry.remove.bind(this.eventRegistry,target,name,listener,options);
+		let remove = this.eventRegistry.remove.bind(this.eventRegistry,target,name,listener,options);
+		if(target instanceof Element) this.ScopeDomInstance.registerElementRelatedEvent(target,remove);
+		if(returnRemove) return remove;
 	}
 	
 	$onceTarget(target,name,listener,options={},returnRemove=false){
@@ -161,22 +179,22 @@ export class scopeController {
 	$defineSignal(obj,prop,value=void 0,descriptor=null,useOriginal=true){ return this.signalCtrl.defineSignal(obj,prop,value,descriptor,useOriginal); }
 	
 	/** @type {typeof signalController.prototype.assignSignals} */
-	$assignSignals(target,source){ return this.signalCtrl.assignSignals(target,source); } // target
+	$assignSignals(target,source){ return this.signalCtrl.assignSignals(target,source); }
 	
 	/** @type {typeof signalController.prototype.computeSignal} */
-	$computeSignal(fn,options={}){ return this.signalCtrl.computeSignal(fn,options); } // [ signal, observer, clear() ]
+	$computeSignal(fn,options={}){ return this.signalCtrl.computeSignal(fn,options); }
 	
 	/** @type {typeof signalController.prototype.proxySignal} */
-	$proxySignal(value){ return this.signalCtrl.proxySignal(value); } // proxy
+	$proxySignal(value){ return this.signalCtrl.proxySignal(value); }
 	
 	/** @type {typeof signalController.prototype.defineProxySignal} */
-	$defineProxySignal(obj,prop,value){ return this.signalCtrl.defineProxySignal(obj,prop,value); } // proxy
+	$defineProxySignal(obj,prop,value){ return this.signalCtrl.defineProxySignal(obj,prop,value); }
 	
 	/** @type {typeof signalController.prototype.preventUpdates} */
-	$preventSignalUpdates(value,...args){ return this.signalCtrl.preventUpdates(fn,...args); }
+	$preventSignalUpdates(fn,...args){ return this.signalCtrl.preventUpdates(fn,...args); }
 	
 	/** @type {typeof signalController.prototype.preventObservers} */
-	$preventSignalObservers(value,...args){ return this.signalCtrl.preventObservers(fn,...args); }
+	$preventSignalObservers(fn,...args){ return this.signalCtrl.preventObservers(fn,...args); }
 	
 }
 
