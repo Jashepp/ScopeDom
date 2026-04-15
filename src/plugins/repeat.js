@@ -40,7 +40,7 @@ export class pluginRepeat {
 		// Get State
 		let state = this.stateMap.get(element);
 		if(!state || !state.ready) return;
-		let { anchorStart, anchorEnd, elementAnchor, mainTemplate } = state;
+		let { signalObs, anchorStart, anchorEnd, elementAnchor, mainTemplate } = state;
 		if((elementAnchor?.isConnected && !anchorStart && !anchorEnd) || (elementAnchor?.isConnected && anchorStart?.isConnected && anchorEnd?.isConnected)) return; // Eg, if moved
 		if(!elementAnchor?.isConnected || (anchorStart && !anchorStart?.isConnected) || (anchorEnd && !anchorEnd?.isConnected)) state.connected=false;
 		// Cleanup
@@ -51,6 +51,8 @@ export class pluginRepeat {
 				for(let removeEvent of set) removeEvent();
 				this.eventMap.delete(elementAnchor);
 			}
+			// Cleanup signalObserver
+			if(signalObs){ signalObs.clear(); state.signalObs=null; }
 		}
 		Promise.resolve().then(()=>{
 			if(state.connected) return;
@@ -115,6 +117,7 @@ export class pluginRepeat {
 		// New State
 		let mainTemplate, fromElement, fromElementAnchor, fromElementConnected, elementChildren, anchorStart, anchorEnd, createAnchorAfter, elementAnchor=element;
 		let state = { __proto__:null,
+			signalCtrl: elementScopeCtrl.ctrl.signalCtrl, signalObs:null,
 			options:{ __proto__:null, onlyOnce, keyName, itemName, scopeName, updateEvent, updateDomEvent, onUpdateEvent, cacheList },
 			mainTemplate:null, anchorStart:null, anchorEnd:null, elementAnchor, element, scopeCtrl:elementScopeCtrl, domCache:new WeakMap(),
 			exec:null, connected:true, ready:false, itemsArr:null, domArr:null, anchorArr:null, triggerExec:null, onUpdateExec:null, updateIndex:0,
@@ -271,7 +274,7 @@ export class pluginRepeat {
 		let optValue = defaultValue, opt = attribOpts.get(optName), execResult;
 		if(trueOnEmpty && (opt?.value==='' || opt?.value===null)) optValue = true;
 		else if(runExp && opt?.value!==void 0){
-			let { result } = instance.elementExecExp(elementScopeCtrl,opt.value,null,{ silentHas:true, useReturn:true });
+			let result = this._execExpression(plugInfo,opt.value,true,null).runFn();
 			execResult = result;
 			if(typeof result!==void 0) optValue = result;
 		}
@@ -279,9 +282,16 @@ export class pluginRepeat {
 		return { __proto__:null, value:optValue, raw:opt?.value, attribOption:opt, isDefault, execResult };
 	}
 	
+	_execExpression(plugInfo,exp,useReturn=true,extra=null,signalObs=null){
+		if(!(exp?.length>0)) return null;
+		let exec = this.instance.elementExecExp(plugInfo.elementScopeCtrl,exp,{ __proto__:null, $expression:exp, ...extra },{ silentHas:true, useReturn, run:false });
+		if(signalObs) exec.runFn = signalObs.wrapRecorder(exec.runFn);
+		return exec;
+	}
+	
 	_runExpressions(plugInfo,state,exp){
 		let { instance } = this;
-		let { options, mainTemplate, elementAnchor, anchorStart, anchorEnd, exec, connected, ready, updateIndex } = state;
+		let { signalObs, options, mainTemplate, elementAnchor, anchorStart, anchorEnd, exec, connected, ready, updateIndex } = state;
 		let { onlyOnce, onUpdateEvent } = options;
 		if(!ready || !connected) return;
 		if(onlyOnce && exec) return;
@@ -289,9 +299,21 @@ export class pluginRepeat {
 		// Only run if anchors are connected
 		if(!anchorStart.isConnected || !anchorEnd.isConnected || !elementAnchor.isConnected) return;
 		// Build Exec for On Update
-		if(onUpdateEvent?.length>0 && !state.onUpdateExec) state.onUpdateExec = instance.elementExecExp(state.scopeCtrl,onUpdateEvent,null,{ silentHas:true, useReturn:false, run:false });
+		if(onUpdateEvent?.length>0 && !state.onUpdateExec) state.onUpdateExec = this._execExpression(plugInfo,onUpdateEvent,false,null);
+		// Setup signalObserver
+		if(!signalObs){
+			let self=this; signalObs = state.signalObs = (signalObs || state.signalCtrl.createObserver());
+			signalObs.addListener(function pluginRepeat_signalObserver(){
+				let updateIndex = state.updateIndex;
+				self.ScopeDom.animFrameHelper.onceRAF(state,signalObs,function pluginRepeat_signalObserver_RAF(){
+					if(state.updateIndex!==updateIndex) return;
+					signalObs.clearSignals();
+					self._runExpressions(plugInfo,state,exp);
+				});
+			});
+		}
 		// Get Items
-		if(!exec) state.exec = exec = instance.elementExecExp(state.scopeCtrl,exp,null,{ silentHas:true, useReturn:true, run:false });
+		if(!exec) state.exec = exec = this._execExpression(plugInfo,exp,true,null,signalObs);
 		let execResult = exec.runFn();
 		// Resolve Signal
 		execResult = this.ScopeDom.resolveSignal(execResult);
@@ -322,6 +344,7 @@ export class pluginRepeat {
 		if(execResult instanceof Map){ itemsArr=Object.entries(execResult); }
 		else if(execResult instanceof Set){ itemsArr=Object.entries([...execResult]); isArr=true; }
 		else if(execResult instanceof Array){ itemsArr=Object.entries(execResult); isArr=true; }
+		else if(Symbol.iterator in Object(execResult)){ itemsArr=Object.entries([...execResult]); isArr=true; }
 		else if(Object(execResult)===execResult){ itemsArr=Object.entries(execResult); }
 		else { execResult=[]; itemsArr=[]; isArr=true; }
 		// Find new items in old items
@@ -452,6 +475,7 @@ export class pluginRepeat {
 		let foundArr = [...foundDOM], fIndex=0, tmpFragment=document.createDocumentFragment();
 		for(let i=0,l=expectedArr.length; i<l; i++){
 			let expected = expectedArr[i];
+			expected = this.ScopeDom.resolveSignal(expected);
 			let found = foundArr[fIndex];
 			// If expected exists later, remove chunks of old DOM
 			if(found && found!==expected){
