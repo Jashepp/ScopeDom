@@ -160,7 +160,7 @@ export class pluginPipeExp {
 						case specialChar: // Special Character
 							if(state.closureCount===0 && state.bracketCount===0 && stack.length===1){
 								if(specialChar==="|" && prev!=="|" && next!=="|") positions.add(i);
-								else positions.add(i);
+								else if(specialChar!=="|") positions.add(i);
 							}
 						default:
 						break;
