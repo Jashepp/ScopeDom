@@ -331,17 +331,16 @@ export class execExpressionProxy {
 	 * @param {execExpressionProxy} obj Proxy options/state
 	 * @param {object} target Target object
 	 * @param {string} prop Property name
-	 * @param {any} receiver Receiver object
+	 * @param {any} [receiver=target] Receiver object
 	 * @returns {any} Property value
 	 */
 	static _getResolve = function execExpGetResolve(obj,target,prop,receiver=target){
 		let value = Reflect.get(target,prop,target);
 		if(obj.useSignalProxy && obj.scopeCtrl?.signalCtrl){
 			let signal, descriptor = getOwnPropertyDescriptor(target,prop);
-			if(target instanceof signalInstance) target = target.get();
 			if(value instanceof signalInstance) signal = value;
-			else if(descriptor?.value instanceof signalInstance) signal = descriptor?.value;
-			else if(descriptor?.get?.[signalSymb] instanceof signalInstance) signal = descriptor?.get?.[signalSymb];
+			else if(descriptor?.value instanceof signalInstance) signal = descriptor.value;
+			else if(descriptor?.get?.[signalSymb] instanceof signalInstance) signal = descriptor.get[signalSymb];
 			// If no signal, and value isn't primitive, define signalProxy
 			if(descriptor?.configurable && !signal && value===Object(value)){
 				return obj.scopeCtrl.signalCtrl.defineProxySignal(target,prop,value);
@@ -357,7 +356,7 @@ export class execExpressionProxy {
 	 * @param {object} target Target object
 	 * @param {string} prop Property name
 	 * @param {any} value Property value
-	 * @param {any} receiver Receiver object
+	 * @param {any} [receiver=target] Receiver object
 	 * @returns {boolean} True on success
 	 */
 	static _setResolve = function execExpSetResolve(obj,target,prop,value,receiver=target){

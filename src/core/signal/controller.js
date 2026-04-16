@@ -287,8 +287,7 @@ export class signalController {
 	 */
 	computeSignal(fn,options={}){
 		options = { __proto__:null, pull:true, ...options };
-		if(options.pull) return this.computeSignalPull(fn,options);
-		else return this.computeSignalPush(fn,options);
+		return options.pull ? this.computeSignalPull(fn,options) : this.computeSignalPush(fn,options);
 	}
 	
 	/**
@@ -328,7 +327,8 @@ export class signalController {
 			let get = ()=>(signal.record(),proxy), set = (v)=>(this.defineProxySignal(obj,prop,v,signal,true),true);
 			get[signalSymb] = set[signalSymb] = signal;
 			defineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
-			return signal.record(), signal.set(proxy), proxy;
+			signal.record(); signal.set(proxy)
+			return proxy;
 		}
 		else {
 			let get = ()=>(signal.record(),value);
