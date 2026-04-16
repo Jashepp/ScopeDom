@@ -316,21 +316,27 @@ export class signalController {
 	 * @param {string} prop - Property name to define
 	 * @param {object} value - Object value to proxy (must be an object, not a primitive)
 	 * @param {signalInstance} [signal=null] - Pre-existing signal for the value
-	 * @param {boolean} [silentDefine=false] - Define primitives without signal proxy
-	 * @returns {signalProxy} Proxy of the passed in value
+	 * @param {boolean} [silentFallback=false] - Define primitives without signal proxy
+	 * @returns {signalProxy} Proxy of the passed in value, or undefined if silentFallback with primitive value
 	 * @throws {TypeError} If value is a primitive (use defineSignal instead)
 	 */
-	defineProxySignal(obj,prop,value,signal=null,silentDefine=false){
-		if(value!==Object(value)){
-			if(!silentDefine) throw new TypeError("defineProxySignal target must not be a primitive, try defineSignal instead");
-			return void defineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, writable:true, value:value });
-		}
+	defineProxySignal(obj,prop,value,signal=null,silentFallback=false){
+		if(!silentFallback && value!==Object(value)) throw new TypeError("defineProxySignal target must not be a primitive, try defineSignal instead");
 		if(!signal) signal = new signalInstance(this,value);
-		let proxy = new signalProxy(value,this,signal);
-		let sGet = ()=>(signal.record(),proxy), sSet = (v)=>(this.defineProxySignal(obj,prop,v,signal,true),true);
-		sGet[signalSymb] = sSet[signalSymb] = signal;
-		defineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get:sGet, set:sSet });
-		return signal.record(), signal.set(proxy), proxy;
+		if(value===Object(value)){
+			let proxy = new signalProxy(value,this,signal);
+			let get = ()=>(signal.record(),proxy), set = (v)=>(this.defineProxySignal(obj,prop,v,signal,true),true);
+			get[signalSymb] = set[signalSymb] = signal;
+			defineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
+			return signal.record(), signal.set(proxy), proxy;
+		}
+		else {
+			let get = ()=>(signal.record(),value);
+			let set = (v)=>(v===Object(v) ? (this.defineProxySignal(obj,prop,v,signal,true),true) : (signal.set(value=v),true) );
+			get[signalSymb] = set[signalSymb] = signal;
+			defineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
+			signal.record(); signal.set(value);
+		}
 	}
 	
 }
