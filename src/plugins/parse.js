@@ -3,12 +3,12 @@
 const elementNodeType = document.ELEMENT_NODE;
 const textNodeType = document.TEXT_NODE;
 let isTextNodeSolid = null;
-let hasSetHTML = false;
+let hasSetHTMLSupport = false;
 
 (()=>{
 	let e=document.createElement('div'), tn=document.createTextNode('text'); e.appendChild(tn);
 	isTextNodeSolid = function isTextNodeSolid(data){ tn.data=data; return e.innerText.length>0 && (tn.data='',!0); };
-	hasSetHTML = 'setHTML' in e && typeof e.setHTML==='function';
+	hasSetHTMLSupport = 'setHTML' in e && typeof e.setHTML==='function';
 })();
 
 /**
@@ -24,6 +24,11 @@ export class pluginParse {
 	 * @returns {string} The name of the plugin.
 	*/
 	get name(){ return 'parse'; }
+	static get name(){ return 'parse'; }
+	
+	#isElementLoaded;
+	#eventRemovalMap; #mutationObserverMap; #intersectionObserverMap;
+	#parseStateMap; #parsedTextNodesSet; #childExcludeTextSet; #expressionRegexCache;
 	
 	/**
 	 * @param {Object} ScopeDom - The ScopeDom class.
@@ -32,14 +37,14 @@ export class pluginParse {
 	constructor(ScopeDom,instance){
 		this.ScopeDom = ScopeDom;
 		this.instance = instance;
-		this.isElementLoaded = ScopeDom.isElementLoaded;
-		this.eventMap = new WeakMap(); // per element-set
-		this.mutObsMap = new WeakMap(); // per element
-		this.intObsMap = new WeakMap(); // per element
-		this.stateMap = new WeakMap(); // per element
-		this.allParseTextNodes = new WeakSet(); // only textNode
-		this.elementChildExcludeText = new WeakSet(); // only child elements
-		this.regexCache = new Map();
+		this.#isElementLoaded = ScopeDom.isElementLoaded;
+		this.#eventRemovalMap = new WeakMap(); // per element-set
+		this.#mutationObserverMap = new WeakMap(); // per element
+		this.#intersectionObserverMap = new WeakMap(); // per element
+		this.#parseStateMap = new WeakMap(); // per element
+		this.#parsedTextNodesSet = new WeakSet(); // only textNode
+		this.#childExcludeTextSet = new WeakSet(); // only child elements
+		this.#expressionRegexCache = new Map();
 	}
 	
 	/**
@@ -53,13 +58,13 @@ export class pluginParse {
 	onConnect(plugInfo){
 		let { element, attribs } = plugInfo;
 		if(!element.isConnected) return;
-		let parseAttrib;
+		let parseAttribute;
 		if(attribs?.size>0) for(let [attribName,attrib] of attribs){
 			let { nameParts, nameKey, isDefault } = attrib;
-			if(nameKey==='parse') parseAttrib = attrib;
+			if(nameKey==='parse') parseAttribute = attrib;
 		}
-		if(!parseAttrib) return;
-		this._setupParse(plugInfo,parseAttrib);
+		if(!parseAttribute) return;
+		this.#configureParse(plugInfo,parseAttribute);
 	}
 	
 	/**
@@ -75,33 +80,33 @@ export class pluginParse {
 		if(attribs?.size>0) for(let [n,a] of attribs) if(a.nameParts.length===1 && a.nameParts[0]==='parse'){ attrib=a; break; }
 		if(!attrib) return;
 		// Remove exclude
-		if(this.elementChildExcludeText.has(element)) this.elementChildExcludeText.delete(element);
+		if(this.#childExcludeTextSet.has(element)) this.#childExcludeTextSet.delete(element);
 		// Remove event listeners - for element
-		if(this.eventMap.has(element)){
-			let set = this.eventMap.get(element);
+		if(this.#eventRemovalMap.has(element)){
+			let set = this.#eventRemovalMap.get(element);
 			for(let removeEvent of set) removeEvent();
-			this.eventMap.delete(element);
+			this.#eventRemovalMap.delete(element);
 		}
 		// Disconnect Mutation Observers - for element
-		if(this.mutObsMap.has(element)){
-			let mutObs = this.mutObsMap.get(element);
-			if(mutObs){ this.mutObsMap.delete(element); mutObs.disconnect(); }
+		if(this.#mutationObserverMap.has(element)){
+			let mutObs = this.#mutationObserverMap.get(element);
+			if(mutObs){ this.#mutationObserverMap.delete(element); mutObs.disconnect(); }
 		}
 		// Disconnect Intersection Observers - for element
-		if(this.intObsMap.has(element)){
-			let intObs = this.intObsMap.get(element);
-			if(intObs){ this.intObsMap.delete(element); intObs.disconnect(); }
+		if(this.#intersectionObserverMap.has(element)){
+			let intObs = this.#intersectionObserverMap.get(element);
+			if(intObs){ this.#intersectionObserverMap.delete(element); intObs.disconnect(); }
 		}
 		// Restore original values - for element
-		if(!this.stateMap.has(element)) return;
-		let state = this.stateMap.get(element);
-		let { parseNodes, parseAttribsMap, options } = state;
-		for(let [node,obj] of parseNodes) this._undoNodeParse(state,node);
-		for(let [e,m] of parseAttribsMap) for(let [name,obj] of m) this._undoAttribParse(state,name);
-		let { parseBindSafe, parseBindHTML } = options;
-		if(parseBindSafe || parseBindHTML) this._undoBindParse(state,element);
+		if(!this.#parseStateMap.has(element)) return;
+		let state = this.#parseStateMap.get(element);
+		let { parseNodes, attributeParseMap, options } = state;
+		for(let [node,obj] of parseNodes) this.#revertNodeParse(state,node);
+		for(let [e,m] of attributeParseMap) for(let [name,obj] of m) this.#revertAttribParse(state,name);
+		let { safeBindOption, htmlBindOption } = options;
+		if(safeBindOption || htmlBindOption) this.#revertBindParse(state,element);
 		// Remove from Maps & Sets - for element-attribute
-		this.stateMap.delete(element);
+		this.#parseStateMap.delete(element);
 		// Normalise text nodes
 		if(state.normalize) element.normalize = state.normalize;
 		element.normalize();
@@ -117,117 +122,117 @@ export class pluginParse {
 	 * @param {Object} attrib - The ScopeDom parsed attributes object.
 	 * @private
 	 */
-	_setupParse(plugInfo,attrib){
+	#configureParse(plugInfo,attrib){
 		let { element, elementScopeCtrl } = plugInfo;
 		// Setup Options
-		let attribOpts = this.instance.elementAttribOptionsWithDefaults(element,attrib);
+		let attributeOptions = this.instance.elementAttribOptionsWithDefaults(element,attrib);
 		// Options
-		let parseText = this._getAttribOption(plugInfo,attrib,attribOpts,'text',false,true,true); // $parse:text
-		let parseTree = this._getAttribOption(plugInfo,attrib,attribOpts,'tree',false,true,true); // $parse:tree
-		let onlyOnce = this._getAttribOption(plugInfo,attrib,attribOpts,'once',false,true,true); // $parse:once
-		let updateEvent = this._getAttribOption(plugInfo,attrib,attribOpts,'update scope','$update',false,true); // $parse:update-scope='event', $emit('event')
-		let updateDomEvent = this._getAttribOption(plugInfo,attrib,attribOpts,'update dom','$update',false,true); // $parse:update-dom='event', $emitDom('event')
-		let onError = this._getAttribOption(plugInfo,attrib,attribOpts,'error','',false,true); // $parse:error
-		let allowDom = this._getAttribOption(plugInfo,attrib,attribOpts,'allow dom',false,true,true); // $parse:allow-dom
-		let visible = this._getAttribOption(plugInfo,attrib,attribOpts,'visible',false,true,true); // $parse:visible
-		let defaultText = this._getAttribOption(plugInfo,attrib,attribOpts,'default text','...',false,true); // $parse:default-text
-		let safeMode = this._getAttribOption(plugInfo,attrib,attribOpts,'safe',false,true,true); // $parse:once
+		let parseTextOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'text',false,true,true); // $parse:text
+		let parseTreeOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'tree',false,true,true); // $parse:tree
+		let onlyOnceOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'once',false,true,true); // $parse:once
+		let updateScopeEventOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'update scope','$update',false,true); // $parse:update-scope='event', $emit('event')
+		let updateDomEventOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'update dom','$update',false,true); // $parse:update-dom='event', $emitDom('event')
+		let errorHandler = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'error','',false,true); // $parse:error
+		let allowDomResult = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'allow dom',false,true,true); // $parse:allow-dom
+		let visibleOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'visible',false,true,true); // $parse:visible
+		let defaultTextOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'default text','...',false,true); // $parse:default-text
+		let safeModeOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'safe',false,true,true); // $parse:once
 		// Option: $parse:exclude
-		let exclude = this._getAttribOption(plugInfo,attrib,attribOpts,'exclude',false,true,true); // $parse:exclude
-		if(exclude.value) this.elementChildExcludeText.add(element);
+		let excludeOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'exclude',false,true,true); // $parse:exclude
+		if(excludeOption.value) this.#childExcludeTextSet.add(element);
 		// Option: $parse:exp - Expression Regex
 		// Allows customizing the expression delimiter (default is {{exp}})
-		let expRegex = /(\{\{(.*?)}})/g
-		let expOpt = this._getAttribOption(plugInfo,attrib,attribOpts,'exp',null,false,false); // $parse:exp
-		if(expOpt.value?.length>0){
+		let expressionRegex = /(\{\{(.*?)}})/g
+		let expressionOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'exp',null,false,false); // $parse:exp
+		if(expressionOption.value?.length>0){
 			// Execute the custom expression format to get the regex pattern string
-			let { result:optFormatResult } = this.instance.elementExecExp(elementScopeCtrl,expOpt.value,null,{ silentHas:true, useReturn:true });
+			let { result:formattedResult } = this.instance.elementExecExp(elementScopeCtrl,expressionOption.value,null,{ silentHas:true, useReturn:true });
 			// If the result is cached, use the cached regex
-			if(typeof optFormatResult==='string' && this.regexCache.has(optFormatResult)) optFormatResult = this.regexCache.get(optFormatResult);
-			if(typeof optFormatResult==='string'){
+			if(typeof formattedResult==='string' && this.#expressionRegexCache.has(formattedResult)) formattedResult = this.#expressionRegexCache.get(formattedResult);
+			if(typeof formattedResult==='string'){
 				// Escape regex special characters to use it as a pattern
-				var result = optFormatResult.replace(/[|\\{}()[\]^$+*?.]/g,'\\$&');
+				var result = formattedResult.replace(/[|\\{}()[\]^$+*?.]/g,'\\$&');
 				// Find the position of 'exp' placeholder in the pattern
 				let pos1 = result.indexOf('exp');
-				if(pos1===-1){ console.warn('pluginParse: invalid format, expecting something like {{exp}}, found',optFormatResult,expOpt?.attribute,element); return false; }
+				if(pos1===-1){ console.warn('pluginParse: invalid format, expecting something like {{exp}}, found',formattedResult,expressionOption?.attribute,element); return false; }
 				// Split the pattern into start and end parts around 'exp'
 				let start = result.substr(0,pos1);
 				let end = result.substr(pos1+3);
 				// Reconstruct the regex with the custom delimiters
-				expRegex = new RegExp('('+start+'(.*?)'+end+')','g');
+				expressionRegex = new RegExp('('+start+'(.*?)'+end+')','g');
 				// Validate the regex by checking it matches the expected format
-				let check = [...this.ScopeDom.regexMatchAll(optFormatResult,expRegex)];
-				if(!check || !check?.[0]){ console.warn('pluginParse: invalid format,',result,'('+start+'(.*?)'+end+')',expRegex,check,expOpt?.attribute,element); return false; }
-				if(check?.[0]?.[1]!==optFormatResult){ console.warn('pluginParse: invalid format,',expRegex,check,expOpt?.attribute,element); return false; }
-				if(check?.[0]?.[2]!=='exp'){ console.warn('pluginParse: invalid format, missing exp,',expRegex,check,expOpt?.attribute,element); return false; }
+				let check = [...this.ScopeDom.regexMatchAll(formattedResult,expressionRegex)];
+				if(!check || !check?.[0]){ console.warn('pluginParse: invalid format,',result,'('+start+'(.*?)'+end+')',expressionRegex,check,expressionOption?.attribute,element); return false; }
+				if(check?.[0]?.[1]!==formattedResult){ console.warn('pluginParse: invalid format,',expressionRegex,check,expressionOption?.attribute,element); return false; }
+				if(check?.[0]?.[2]!=='exp'){ console.warn('pluginParse: invalid format, missing exp,',expressionRegex,check,expressionOption?.attribute,element); return false; }
 				// Cache the regex for future use
-				this.regexCache.set(optFormatResult,expRegex);
+				this.#expressionRegexCache.set(formattedResult,expressionRegex);
 			}
 			// If the result is already a RegExp, use it directly
-			else if(optFormatResult instanceof RegExp) expRegex = optFormatResult;
-			else { console.warn('pluginParse: invalid result, expecting string or regex,',optFormatResult,expOpt?.attribute,element); return false; }
+			else if(formattedResult instanceof RegExp) expressionRegex = formattedResult;
+			else { console.warn('pluginParse: invalid result, expecting string or regex,',formattedResult,expressionOption?.attribute,element); return false; }
 		}
 		// Option: $parse:attrib-name - Identifies attributes that should be parsed
-		let parseAttribsMap = new Map();
-		let parseAttribNames = new Set();
-		for(let [k,{ optionParts:optParts, value }] of attribOpts){
+		let attributeParseMap = new Map();
+		let attributeParseNames = new Set();
+		for(let [k,{ optionParts:optParts, value }] of attributeOptions){
 			// Only process attributes that start with 'attrib' in their option
 			if(optParts.length<2 || optParts[0]!=='attrib') continue;
 			let name = optParts.slice(1).join('-');
-			parseAttribNames.add(name);
+			attributeParseNames.add(name);
 			if(value?.length>0){
-				let m = parseAttribsMap.get(element) || new Map();
+				let m = attributeParseMap.get(element) || new Map();
 				m.set(name,{ __proto__:null, exec:null, signalObs:null, exp:value, original:null });
-				if(!parseAttribsMap.has(element)) parseAttribsMap.set(element,m);
+				if(!attributeParseMap.has(element)) attributeParseMap.set(element,m);
 			}
 		}
 		// Option: $parse:bind & $parse:bind-html - Parse Bind - Auto-Excludes if no tree or text on same element.
-		let parseBindSafe = false, parseBindHTML = false;
-		let bindSafe = this._getAttribOption(plugInfo,attrib,attribOpts,'bind',false,false,false); // $parse:bind
-		let bindHTML = this._getAttribOption(plugInfo,attrib,attribOpts,'bind html',false,false,false); // $parse:bind-html
-		if(!(parseTree.value && !parseTree.isDefault) && !(parseText.value && !parseText.isDefault)){
-			if(bindSafe.value?.length>0) parseBindSafe = { __proto__:null, exec:null, signalObs:null, exp:bindSafe.value, original:element.textContent, ready:false };
-			else if(bindHTML.value?.length>0) parseBindHTML = { __proto__:null, exec:null, signalObs:null, exp:bindHTML.value, original:element.innerHTML, ready:false };
-			if(parseBindSafe || parseBindHTML) this.elementChildExcludeText.add(element);
+		let safeBindOption = false, htmlBindOption = false;
+		let bindSafe = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'bind',false,false,false); // $parse:bind
+		let bindHTML = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'bind html',false,false,false); // $parse:bind-html
+		if(!(parseTreeOption.value && !parseTreeOption.isDefault) && !(parseTextOption.value && !parseTextOption.isDefault)){
+			if(bindSafe.value?.length>0) safeBindOption = { __proto__:null, exec:null, signalObs:null, exp:bindSafe.value, original:element.textContent, ready:false };
+			else if(bindHTML.value?.length>0) htmlBindOption = { __proto__:null, exec:null, signalObs:null, exp:bindHTML.value, original:element.innerHTML, ready:false };
+			if(safeBindOption || htmlBindOption) this.#childExcludeTextSet.add(element);
 		}
 		// State
 		let state = { __proto__:null,
 			signalCtrl: elementScopeCtrl.ctrl.signalCtrl,
-			element, normalize:null, parseNodes:new Map(), parseAttribNames, parseAttribsMap, nodesPending:false, parsePending:false, isVisible:false,
+			element, normalize:null, parseNodes:new Map(), attributeParseNames, attributeParseMap, nodesPending:false, parsePending:false, isVisible:false,
 			options:{ __proto__:null,
-				parseTree:parseTree.value, parseText:parseText.value, onlyOnce:onlyOnce.value, updateEvent:updateEvent.value, updateDomEvent:updateDomEvent.value,
-				onError:onError.value, allowDomResult:allowDom.value, onVisible:visible.value, defaultText:defaultText.value,
-				exclude:exclude.value, expRegex, parseBindSafe, parseBindHTML, safeMode:safeMode.value
+				parseTreeOption:parseTreeOption.value, parseTextOption:parseTextOption.value, onlyOnceOption:onlyOnceOption.value, updateScopeEventOption:updateScopeEventOption.value, updateDomEventOption:updateDomEventOption.value,
+				errorHandler:errorHandler.value, allowDomResult:allowDomResult.value, onVisible:visibleOption.value, defaultTextOption:defaultTextOption.value,
+				excludeOption:excludeOption.value, expressionRegex, safeBindOption, htmlBindOption, safeMode:safeModeOption.value
 			}
 		};
-		this.stateMap.set(element,state);
+		this.#parseStateMap.set(element,state);
 		// Disable normalize
 		if(!state.normalize){
 			state.normalize = element.normalize;
-			element.normalize = this._disabledNormalize;
+			element.normalize = this.#noopNormalize;
 		}
 		// Listen
-		let triggerExec = this._runParseExpressions.bind(this,state);
-		if(updateEvent.value?.length>0){ // $parse:update='event', $emit('event')
-			this._registerEvent(element,elementScopeCtrl.ctrl.$on(updateEvent.value,triggerExec,{ __proto__:null, capture:false, passive:true },true));
+		let executeParseTrigger = this.#runParseExpressions.bind(this,state);
+		if(updateScopeEventOption.value?.length>0){ // $parse:update='event', $emit('event')
+			this.#registerEventRemoval(element,elementScopeCtrl.ctrl.$on(updateScopeEventOption.value,executeParseTrigger,{ __proto__:null, capture:false, passive:true },true));
 		}
-		if(updateDomEvent.value?.length>0){ // $parse:update-dom='event', $emitDom('event')
-			this._registerEvent(element,elementScopeCtrl.$onDom(updateDomEvent.value,triggerExec,{ __proto__:null, capture:true, passive:true },true));
+		if(updateDomEventOption.value?.length>0){ // $parse:update-dom='event', $emitDom('event')
+			this.#registerEventRemoval(element,elementScopeCtrl.$onDom(updateDomEventOption.value,executeParseTrigger,{ __proto__:null, capture:true, passive:true },true));
 		}
 		// Add $parse() to element & element context
-		elementScopeCtrl.execContext.$parse = element.$parse = triggerExec;
+		elementScopeCtrl.execContext.$parse = element.$parse = executeParseTrigger;
 		// Continue when ready
 		this.instance.onReady(function onReadyPluginParse(){
 			// Find & watch targets
-			this._scanParseTargets(state);
+			this.#discoverParseTargets(state);
 			// Observe later nodes
-			this._setupMutationObserver(state);
+			this.#initializeMutationObserver(state);
 			// Observe visability
-			if(visible.value) this._setupIntersectionObserver(state);
+			if(visibleOption.value) this.#initializeIntersectionObserver(state);
 			// Run first parse
-			this._runParseExpressions(state);
+			this.#runParseExpressions(state);
 			// If more parsing is needed
-			if(state.nodesPending) this._scanParseRunSafe(state);
+			if(state.nodesPending) this.#safelyScanAndParse(state);
 		}.bind(this),false);
 	}
 	
@@ -237,6 +242,7 @@ export class pluginParse {
 	 * @param {Object} plugInfo - Information about the plugin connection.
 	 * @param {HTMLElement} plugInfo.elementScopeCtrl - The scope controller for the element.
 	 * @param {Object} attrib - The ScopeDom parsed attributes object.
+	 * @param {Object} attributeOptions - The ScopeDom parsed attribute options Map.
 	 * @param {string} optName - The name of the option to retrieve.
 	 * @param {*} [defaultValue=null] - The default value if the option is not found.
 	 * @param {boolean} [trueOnEmpty=false] - If true, treats empty or null values as true.
@@ -244,18 +250,18 @@ export class pluginParse {
 	 * @returns {Object} An object containing the resolved value, raw value, and other metadata.
 	 * @private
 	 */
-	_getAttribOption(plugInfo,attrib,attribOpts,optName,defaultValue=null,trueOnEmpty=false,runExp=false){
+	#getOptionFromAttribute(plugInfo,attrib,attributeOptions,optName,defaultValue=null,trueOnEmpty=false,runExp=false){
 		let { instance } = this;
 		let { elementScopeCtrl } = plugInfo;
 		let { isDefault, attribute, nameKey, nameParts, value } = attrib;
-		let optValue = defaultValue, opt = attribOpts.get(optName)
-		if(trueOnEmpty && (opt?.value==='' || opt?.value===null)) optValue = true;
-		else if(runExp && opt?.value?.length>0){
-			let { result } = instance.elementExecExp(elementScopeCtrl,opt.value,null,{ silentHas:true, useReturn:true });
-			if(typeof result!==void 0) optValue = result;
+		let optionValue = defaultValue, option = attributeOptions.get(optName)
+		if(trueOnEmpty && (option?.value==='' || option?.value===null)) optionValue = true;
+		else if(runExp && option?.value?.length>0){
+			let { result } = instance.elementExecExp(elementScopeCtrl,option.value,null,{ silentHas:true, useReturn:true });
+			if(typeof result!==void 0) optionValue = result;
 		}
-		else if(!runExp && opt?.value?.length>0) optValue = opt.value;
-		return { __proto__:null, value:optValue, raw:opt?.value, attribOption:opt, isDefault };
+		else if(!runExp && option?.value?.length>0) optionValue = option.value;
+		return { __proto__:null, value:optionValue, raw:option?.value, attribOption:option, isDefault };
 	}
 	
 	/**
@@ -263,7 +269,7 @@ export class pluginParse {
 	 * Logs a warning when called to inform developers that normalize is disabled.
 	 * @private
 	 */
-	_disabledNormalize(){ console.warn('This element has .normalize disabled while parse is being used.'); };
+	#noopNormalize(){ console.warn('This element has .normalize disabled while parse is being used.'); };
 	
 	/**
 	 * Sets up a MutationObserver to watch for changes in the element's subtree.
@@ -272,28 +278,28 @@ export class pluginParse {
 	 * @param {Object} state - The current parsing state for the element.
 	 * @private
 	 */
-	_setupMutationObserver(state){
+	#initializeMutationObserver(state){
 		let { element, parseNodes, options } = state;
-		let { parseBindSafe, parseBindHTML } = options;
-		if(parseBindSafe || parseBindHTML) return;
-		if(this.mutObsMap.has(element)) return;
+		let { safeBindOption, htmlBindOption } = options;
+		if(safeBindOption || htmlBindOption) return;
+		if(this.#mutationObserverMap.has(element)) return;
 		let mutObs=new MutationObserver(function pluginParseMutationObserver(muts){
-			let check = false;
-			for(let m of muts){
-				for(let e of m.addedNodes){
+			let needsRescan = false;
+			for(let mutation of muts){
+				for(let e of mutation.addedNodes){
 					if((e.nodeType!==textNodeType && e.nodeType!==elementNodeType) || e.shadowRoot || e.nodeName==='TEMPLATE' || e.nodeName==='SCRIPT' || e.nodeName==='STYLE') continue;
-					check = true;
+					needsRescan = true;
 				}
-				for(let e of m.removedNodes){
-					if(e.nodeType===textNodeType && this.allParseTextNodes.has(e) && parseNodes.has(e)) this._undoNodeParse(state,e);
-					if(this.elementChildExcludeText.has(e)) this.elementChildExcludeText.delete(e);
+				for(let e of mutation.removedNodes){
+					if(e.nodeType===textNodeType && this.#parsedTextNodesSet.has(e) && parseNodes.has(e)) this.#revertNodeParse(state,e);
+					if(this.#childExcludeTextSet.has(e)) this.#childExcludeTextSet.delete(e);
 				}
 			}
-			if(check) this._scanParseRunSafe(state);
+			if(needsRescan) this.#safelyScanAndParse(state);
 		}.bind(this));
 		// Observe changes in the subtree if tree parsing is enabled
-		mutObs.observe(element,{ __proto__:null, subtree:!!options.parseTree, childList:true, attributes:false });
-		this.mutObsMap.set(element,mutObs);
+		mutObs.observe(element,{ __proto__:null, subtree:!!options.parseTreeOption, childList:true, attributes:false });
+		this.#mutationObserverMap.set(element,mutObs);
 	}
 	
 	/**
@@ -302,21 +308,21 @@ export class pluginParse {
 	 * @param {Object} state - The current parsing state for the element.
 	 * @private
 	 */
-	_setupIntersectionObserver(state){
+	#initializeIntersectionObserver(state){
 		let { element, options } = state;
-		let { onVisible } = options;
-		if(!onVisible || this.intObsMap.has(element)) return;
-		let fn = this._runParseExpressions.bind(this,state);
+		let { onVisibleOption } = options;
+		if(!onVisibleOption || this.#intersectionObserverMap.has(element)) return;
+		let fn = this.#runParseExpressions.bind(this,state);
 		let intObs=new IntersectionObserver(function pluginParseIntersectionObserver(ints){
-			let check=false, prevVisible=state.isVisible;
-			for(let int of ints){
-				if(int.intersectionRatio>0){ if(!prevVisible){ state.isVisible=true; check=true; } }
-				else { if(prevVisible){ state.isVisible=false; } }
+			let needsRescan=false, previousVisibilityState=state.isVisible;
+			for(let intersection of ints){
+				if(intersection.intersectionRatio>0){ if(!previousVisibilityState){ state.isVisible=true; needsRescan=true; } }
+				else { if(previousVisibilityState){ state.isVisible=false; } }
 			}
-			if(check) this.ScopeDom.animFrameHelper.onceRAF(state.element,'pluginParse-onVisible',fn);
+			if(needsRescan) this.ScopeDom.animFrameHelper.onceRAF(state.element,'pluginParse-onVisible',fn);
 		}.bind(this),{ __proto__:null, threshold:[0,0.05,0.5,0.95,1], rootMargin:"10px", });
 		intObs.observe(element);
-		this.intObsMap.set(element,intObs);
+		this.#intersectionObserverMap.set(element,intObs);
 	}
 	
 	/**
@@ -326,13 +332,13 @@ export class pluginParse {
 	 * @param {Object} state - The current parsing state.
 	 * @private
 	 */
-	_scanParseRunSafe(state){
-		this._scanParseTargets(state);
+	#safelyScanAndParse(state){
+		this.#discoverParseTargets(state);
 		if(!state.parsePending && !state.nodesPending) return; // Helps prevent infinite-check
 		state.parsePending = false;
-		this._runParseExpressions(state);
+		this.#runParseExpressions(state);
 		// If document is still loading & there's an element mid-dom-construction
-		if(state.nodesPending) this.ScopeDom.animFrameHelper.onceRAF(state.element,'pluginParse-nodesPending',this._scanParseRunSafe.bind(this,state));
+		if(state.nodesPending) this.ScopeDom.animFrameHelper.onceRAF(state.element,'pluginParse-nodesPending',this.#safelyScanAndParse.bind(this,state));
 		state.nodesPending = false;
 	}
 	
@@ -343,60 +349,60 @@ export class pluginParse {
 	 * @param {Function} removeEvent - The function to remove the event listener.
 	 * @private
 	 */
-	_registerEvent(element,removeEvent){
-		if(!this.eventMap.has(element)) this.eventMap.set(element,new Set());
-		this.eventMap.get(element).add(removeEvent);
+	#registerEventRemoval(element,removeEvent){
+		if(!this.#eventRemovalMap.has(element)) this.#eventRemovalMap.set(element,new Set());
+		this.#eventRemovalMap.get(element).add(removeEvent);
 	}
 	
 	/**
 	 * Scans the element for targets and initiates the parsing process.
 	 *
 	 * @param {Object} state - The current parsing state.
-	 * @prvative
+	 * @private
 	 */
-	_scanParseTargets(state){
-		let targets = this._findTargets(state.element,state);
-		this._parseTargets(state,targets);
+	#discoverParseTargets(state){
+		let targetNodes = this.#locateParseTargets(state.element,state);
+		this.#parseTargets(state,targetNodes);
 	}
 	
 	/**
 	 * Recursively finds elements and attributes that need parsing.
 	 *
-	 * @param {Node} eTarget - The target node to start searching from.
+	 * @param {Node} targetNode - The target node to start searching from.
 	 * @param {Object} state - The current parsing state.
-	 * @param {boolean} [recursiveFind=false] - Search child nodes recursively.
+	 * @param {boolean} [isRecursive=false] - Search child nodes recursively.
 	 * @returns {Object} An object containing sets of nodes and attributes to be parsed.
 	 * @private
 	 */
-	_findTargets(eTarget,state,recursiveFind=false){
-		let { parseNodes, parseAttribNames, parseAttribsMap, options } = state;
-		let { parseTree, parseText, expRegex, parseBindSafe, parseBindHTML } = options;
-		let nodes = new Set(), attribs = new Set();
-		if(parseTree || parseText){
-			for(let e of eTarget.childNodes){
-				if(this.instance.isElementIgnored(e,false)) continue; // $ignore
-				if(e.nodeType!==elementNodeType && e.nodeType!==textNodeType) continue;
-				if(e.shadowRoot || e.nodeName==='TEMPLATE' || e.nodeName==='SCRIPT' || e.nodeName==='STYLE') continue;
-				if(parseText && e.nodeType===textNodeType){
-					if(parseNodes.has(e) || this.allParseTextNodes.has(e)) continue;
-					if(!this.ScopeDom.isElementLoaded(e)){ state.nodesPending=true; continue; }
-					let isMatch = this.ScopeDom.regexTest(e.data,expRegex);
-					if(isMatch){
-						nodes.add(e);
+	#locateParseTargets(targetNode,state,isRecursive=false){
+		let { parseNodes, attributeParseNames, attributeParseMap, options } = state;
+		let { parseTreeOption, parseTextOption, expressionRegex, safeBindOption, htmlBindOption } = options;
+		let targetNodes = new Set(), targetAttribs = new Set();
+		if(parseTreeOption || parseTextOption){
+			for(let childElement of targetNode.childNodes){
+				if(this.instance.isElementIgnored(childElement,false)) continue; // $ignore
+				if(childElement.nodeType!==elementNodeType && childElement.nodeType!==textNodeType) continue;
+				if(childElement.shadowRoot || childElement.nodeName==='TEMPLATE' || childElement.nodeName==='SCRIPT' || childElement.nodeName==='STYLE') continue;
+				if(parseTextOption && childElement.nodeType===textNodeType){
+					if(parseNodes.has(childElement) || this.#parsedTextNodesSet.has(childElement)) continue;
+					if(!this.ScopeDom.isElementLoaded(childElement)){ state.nodesPending=true; continue; }
+					let hasExpressionMatch = this.ScopeDom.regexTest(childElement.data,expressionRegex);
+					if(hasExpressionMatch){
+						targetNodes.add(childElement);
 						state.parsePending = true;
 					}
 				}
-				else if(parseTree && e?.childNodes?.length>0){
-					if(this.elementChildExcludeText.has(e)) continue;
+				else if(parseTreeOption && childElement?.childNodes?.length>0){
+					if(this.#childExcludeTextSet.has(childElement)) continue;
 					// If element has $parse:exclude
-					if(e.attributes?.length>0){
-						let allElemAttribs = this.instance.elementAttribs(e,true,false), foundExclude = false;
+					if(childElement.attributes?.length>0){
+						let allElemAttribs = this.instance.elementAttribs(childElement,true,false), foundExclude = false;
 						if(allElemAttribs) for(let [attribName,attrib] of allElemAttribs){
 							let { nameParts } = attrib;
 							if(nameParts.length!==1 || nameParts[0]!=='parse') continue;
-							let opts = this.instance.elementAttribOptionsWithDefaults(e,attrib,true,false);
+							let opts = this.instance.elementAttribOptionsWithDefaults(childElement,attrib,true,false);
 							if(opts.has('exclude') && opts.get('exclude').value===''){
-								this.elementChildExcludeText.add(e);
+								this.#childExcludeTextSet.add(childElement);
 								foundExclude = true;
 								break;
 							}
@@ -404,33 +410,33 @@ export class pluginParse {
 						if(foundExclude) continue;
 					}
 					// Recursively search child nodes for parsing targets
-					let { nodes:nodes2, attribs:attribs2 } = this._findTargets(e,state,true);
+					let { targetNodes:childNodes, targetAttribs:childAttribs } = this.#locateParseTargets(childElement,state,isRecursive);
 					// Merge results
-					if(nodes2.size>0) nodes = nodes.union ? nodes.union(nodes2) : new Set([...nodes,...nodes2]);
-					if(attribs2.size>0) attribs = attribs.union ? attribs.union(attribs2) : new Set([...attribs,...attribs2]);
+					if(childNodes.size>0) targetNodes = targetNodes.union ? targetNodes.union(childNodes) : new Set([...targetNodes,...childNodes]);
+					if(childAttribs.size>0) targetAttribs = targetAttribs.union ? targetAttribs.union(childAttribs) : new Set([...targetAttribs,...childAttribs]);
 				}
 			}
 		}
-		if(!recursiveFind){
-			if(parseAttribNames.size>0){
-				if(!this.ScopeDom.isElementLoaded(eTarget)) state.nodesPending=true;
-				for(let { name, value } of eTarget.attributes){
-					if(!parseAttribNames.has(name) || !this.ScopeDom.regexTest(value,expRegex)) continue;
-					if(parseAttribsMap.get(eTarget)?.has(name)) continue;
-					attribs.add({ __proto__:null, element:eTarget, name, value });
+		if(!isRecursive){
+			if(attributeParseNames.size>0){
+				if(!this.ScopeDom.isElementLoaded(targetNode)) state.nodesPending=true;
+				for(let { name, value } of targetNode.attributes){
+					if(!attributeParseNames.has(name) || !this.ScopeDom.regexTest(value,expressionRegex)) continue;
+					if(attributeParseMap.get(targetNode)?.has(name)) continue;
+					targetAttribs.add({ __proto__:null, element:targetNode, name, value });
 					state.parsePending = true;
 				}
 			}
-			if(parseBindSafe && !parseBindSafe.ready){
-				if(!this.ScopeDom.isElementLoaded(eTarget)) state.nodesPending=true;
-				else { parseBindSafe.ready=true; state.parsePending=true; }
+			if(safeBindOption && !safeBindOption.ready){
+				if(!this.ScopeDom.isElementLoaded(targetNode)) state.nodesPending=true;
+				else { safeBindOption.ready=true; state.parsePending=true; }
 			}
-			else if(parseBindHTML && !parseBindHTML.ready){
-				if(!this.ScopeDom.isElementLoaded(eTarget)) state.nodesPending=true;
-				else { parseBindHTML.ready=true; state.parsePending=true; }
+			else if(htmlBindOption && !htmlBindOption.ready){
+				if(!this.ScopeDom.isElementLoaded(targetNode)) state.nodesPending=true;
+				else { htmlBindOption.ready=true; state.parsePending=true; }
 			}
 		}
-		return { nodes, attribs };
+		return { targetNodes, targetAttribs };
 	}
 	
 	/**
@@ -444,7 +450,7 @@ export class pluginParse {
 	 *   - regexIndex: The starting index of the match in the string
 	 * @private
 	 */
-	__regexMatchExp(str,regex){
+	#extractRegexMatches(str,regex){
 		let match, matches=[]; regex.lastIndex=0;
 		while(match=regex.exec(str)) matches.push({ expOuter:match[1], expInner:match[2], regexIndex:match.index });
 		return matches;
@@ -454,37 +460,37 @@ export class pluginParse {
 	 * Performs the actual parsing of the identified targets (text nodes and attributes).
 	 *
 	 * @param {Object} state - The current parsing state.
-	 * @param {Object} targets - The targets to be parsed (nodes and attributes).
+	 * @param {Object} targetNodes - The targets to be parsed (nodes and attributes).
 	 * @private
 	 */
-	_parseTargets(state,targets){
-		let { parseNodes, parseAttribsMap, options } = state;
-		let { expRegex } = options;
-		let { nodes:pendingNodes, attribs:pendingAttribs } = targets;
+	#parseTargets(state,targetNodes){
+		let { parseNodes, attributeParseMap, options } = state;
+		let { expressionRegex } = options;
+		let { targetNodes:pendingTargetNodes, targetAttribs:pendingTargetAttribs } = targetNodes;
 		// Parse text nodes
-		if(pendingNodes.size>0){
-			for(let e of pendingNodes){
+		if(pendingTargetNodes.size>0){
+			for(let e of pendingTargetNodes){
 				// Extract matched expressions from text node using regex
-				let text=e.data, textLen=text.length, matches=this.__regexMatchExp(text,expRegex), index=0, nodes=[];
+				let nodeText=e.data, nodeTextLen=nodeText.length, matches=this.#extractRegexMatches(nodeText,expressionRegex), index=0, targetNodes=[];
 				for(let { expOuter, expInner, regexIndex } of matches){
 					let parseNode, start=index, pos=regexIndex, end=regexIndex+expOuter.length;
 					index = end;
 					// If text node is only expression, re-use same node (no splitting needed)
-					if(start===0 && pos===0 && index===textLen) parseNode = e;
+					if(start===0 && pos===0 && index===nodeTextLen) parseNode = e;
 					// Otherwise split into multiple nodes (before text, expression, after text)
 					else {
-						let beforeStr = text.substr(start,pos-start);
-						if(beforeStr.length>0) nodes.push(document.createTextNode(beforeStr));
+						let prefixString = nodeText.substr(start,pos-start);
+						if(prefixString.length>0) targetNodes.push(document.createTextNode(prefixString));
 						parseNode = document.createTextNode(expOuter);
-						nodes.push(parseNode);
+						targetNodes.push(parseNode);
 					}
 					parseNodes.set(parseNode,{ __proto__:null, node:parseNode, exec:null, signalObs:null, exp:expInner, original:expOuter, anchor:null, updateIndex:0, lastResult:expOuter });
-					this.allParseTextNodes.add(parseNode);
+					this.#parsedTextNodesSet.add(parseNode);
 				}
-				if(nodes.length>0){
-					if(index<textLen) nodes.push(document.createTextNode(text.substr(index)));
+				if(targetNodes.length>0){
+					if(index<nodeTextLen) targetNodes.push(document.createTextNode(nodeText.substr(index)));
 					const fragment = document.createDocumentFragment();
-					for(let n of nodes){
+					for(let n of targetNodes){
 						fragment.appendChild(n);
 						this.instance.elementScopeSetAlias(n,e);
 					}
@@ -493,23 +499,23 @@ export class pluginParse {
 			}
 		}
 		// Parse attribute values
-		if(pendingAttribs.size>0){
-			for(let { element:e, name, value:text } of pendingAttribs){
+		if(pendingTargetAttribs.size>0){
+			for(let { element:e, name, value:nodeText } of pendingTargetAttribs){
 				// Parse attribute values using regex matching
-				let matches=this.__regexMatchExp(text,expRegex), index=0, expArr=[];
+				let matches=this.#extractRegexMatches(nodeText,expressionRegex), index=0, expressionArray=[];
 				for(let { expOuter, expInner, regexIndex } of matches){
 					let start=index, pos=regexIndex, end=regexIndex+expOuter.length;
 					index = end;
-					let beforeStr = text.substr(start,pos-start);
-					if(beforeStr.length>0) expArr.push(JSON.stringify(beforeStr));
-					expArr.push('('+expInner+')');
+					let prefixString = nodeText.substr(start,pos-start);
+					if(prefixString.length>0) expressionArray.push(JSON.stringify(prefixString));
+					expressionArray.push('('+expInner+')');
 				}
-				if(index<text.length) expArr.push(JSON.stringify(text.substr(index)));
-				if(!parseAttribsMap.has(e)) parseAttribsMap.set(e,new Map());
-				let exp, attribMap = parseAttribsMap.get(e);
-				if(expArr.length===1) exp = expArr[0];
-				else exp = `[${expArr.join(',')}].join('')`;
-				if(!attribMap.has(name)) attribMap.set(name,{ __proto__:null, exec:null, signalObs:null, exp, original:text, updateIndex:0 });
+				if(index<nodeText.length) expressionArray.push(JSON.stringify(nodeText.substr(index)));
+				if(!attributeParseMap.has(e)) attributeParseMap.set(e,new Map());
+				let exp, attribMap = attributeParseMap.get(e);
+				if(expressionArray.length===1) exp = expressionArray[0];
+				else exp = `[${expressionArray.join(',')}].join('')`;
+				if(!attribMap.has(name)) attribMap.set(name,{ __proto__:null, exec:null, signalObs:null, exp, original:nodeText, updateIndex:0 });
 			}
 		}
 	}
@@ -522,7 +528,7 @@ export class pluginParse {
 	 * @param {Text} node - The text node to revert.
 	 * @private
 	 */
-	_undoNodeParse(state,node){
+	#revertNodeParse(state,node){
 		let { parseNodes } = state;
 		let obj = parseNodes.get(node);
 		if(obj){
@@ -533,7 +539,7 @@ export class pluginParse {
 			if(obj.anchor && obj.anchor.parentNode) obj.anchor.remove();
 			obj.signalObs?.clear(); obj.signalObs = obj.exec = null;
 		}
-		if(this.allParseTextNodes.has(node)) this.allParseTextNodes.delete(node);
+		if(this.#parsedTextNodesSet.has(node)) this.#parsedTextNodesSet.delete(node);
 		parseNodes.delete(node);
 	}
 	
@@ -545,13 +551,13 @@ export class pluginParse {
 	 * @param {string} name - The attribute name to revert.
 	 * @private
 	 */
-	_undoAttribParse(state,name){
-		let { element, parseAttribsMap } = state;
-		let obj = parseAttribsMap.get(element)?.get(name);
+	#revertAttribParse(state,name){
+		let { element, attributeParseMap } = state;
+		let obj = attributeParseMap.get(element)?.get(name);
 		if(obj && (obj.original===void 0 || obj.original===null)) element.removeAttribute(name);
 		else if(obj) element.setAttribute(name,obj.original);
 		if(obj){
-			parseAttribsMap.get(element)?.delete(name);
+			attributeParseMap.get(element)?.delete(name);
 			obj.signalObs?.clear(); obj.signalObs = obj.exec = null;
 		}
 	}
@@ -564,15 +570,15 @@ export class pluginParse {
 	 * @param {HTMLElement} element - The element to revert.
 	 * @private
 	 */
-	_undoBindParse(state,element){
-		let { parseBindSafe, parseBindHTML } = state.options;
-		if(parseBindHTML){
-			element.innerHTML = parseBindHTML.original;
-			parseBindHTML.signalObs?.clear(); parseBindHTML.signalObs = parseBindHTML.exec = null;
+	#revertBindParse(state,element){
+		let { safeBindOption, htmlBindOption } = state.options;
+		if(htmlBindOption){
+			element.innerHTML = htmlBindOption.original;
+			htmlBindOption.signalObs?.clear(); htmlBindOption.signalObs = htmlBindOption.exec = null;
 		}
-		else if(parseBindSafe){
-			element.textContent = parseBindSafe.original;
-			parseBindSafe.signalObs?.clear(); parseBindSafe.signalObs = parseBindSafe.exec = null;
+		else if(safeBindOption){
+			element.textContent = safeBindOption.original;
+			safeBindOption.signalObs?.clear(); safeBindOption.signalObs = safeBindOption.exec = null;
 		}
 	}
 	
@@ -587,7 +593,7 @@ export class pluginParse {
 	 * @returns {Object} The execution result.
 	 * @private
 	 */
-	_execExpression(element,node,exp,signalObs){
+	#executeExpression(element,node,exp,signalObs){
 		let eCtrl = this.instance.elementScopeCtrl(node);
 		let exec = this.instance.elementExecExp(eCtrl,exp,{ $node:node, $expression:exp, $parseRoot:element },{ silentHas:true, useReturn:true, run:false });
 		if(signalObs) exec.runFn = signalObs.wrapRecorder(exec.runFn);
@@ -600,93 +606,93 @@ export class pluginParse {
 	 * @param {Object} state - The current parsing state.
 	 * @private
 	 */
-	_runParseExpressions(state){
-		let { signalCtrl, element, parseNodes, parseAttribsMap, isVisible, options } = state;
-		let { onlyOnce, parseBindSafe, parseBindHTML, onVisible } = options;
+	#runParseExpressions(state){
+		let { signalCtrl, element, parseNodes, attributeParseMap, isVisible, options } = state;
+		let { onlyOnceOption, safeBindOption, htmlBindOption, onVisibleOption } = options;
 		let self = this;
 		// Text Nodes
 		for(let [n,obj] of parseNodes){
 			let result, { node, exp, exec, signalObs, comment, updateIndex } = obj;
-			if(!node.isConnected && !(comment && comment.isConnected)){ this._undoNodeParse(state,node); continue; }
-			if(exec && onlyOnce) continue;
-			if(onVisible && !isVisible){ if(updateIndex===0) result=options.defaultText; else continue; }
+			if(!node.isConnected && !(comment && comment.isConnected)){ this.#revertNodeParse(state,node); continue; }
+			if(exec && onlyOnceOption) continue;
+			if(onVisibleOption && !isVisible){ if(updateIndex===0) result=options.defaultTextOption; else continue; }
 			else{
 				if(!exec){
 					signalObs = obj.signalObs = signalCtrl.createObserver();
-					exec = obj.exec = this._execExpression(element,node,exp,signalObs);
+					exec = obj.exec = this.#executeExpression(element,node,exp,signalObs);
 					signalObs.addListener(function parseTextNode_signalObserver(){
 						let updateIndex = obj.updateIndex;
 						self.ScopeDom.animFrameHelper.onceRAF(node,signalObs,function parseTextNode_signalObserver_RAF(){
 							if(obj.updateIndex!==updateIndex) return;
 							signalObs.clearSignals();
-							self._updateTextNode(node,exec.runFn(),obj,state,updateIndex,signalObs);
+							self.#updateTextNode(node,exec.runFn(),obj,state,updateIndex,signalObs);
 						});
 					});
 				}
 				result = exec.runFn();
 			}
-			this._updateTextNode(node,result,obj,state,updateIndex,signalObs);
+			this.#updateTextNode(node,result,obj,state,updateIndex,signalObs);
 		}
 		// Element Attributes
-		for(let [node,attribMap] of parseAttribsMap){
-			if(!node.isConnected){ for(let [name,obj] of attribMap){ this._undoAttribParse(state,name); } continue; }
+		for(let [node,attribMap] of attributeParseMap){
+			if(!node.isConnected){ for(let [name,obj] of attribMap){ this.#revertAttribParse(state,name); } continue; }
 			for(let [name,obj] of attribMap){
 				let { exp, exec, signalObs, updateIndex } = obj;
-				if(exec && onlyOnce) continue;
-				if(onVisible && !isVisible) continue;
+				if(exec && onlyOnceOption) continue;
+				if(onVisibleOption && !isVisible) continue;
 				if(!exec){
 					signalObs = obj.signalObs = signalCtrl.createObserver();
-					exec = obj.exec = this._execExpression(element,node,exp,signalObs);
+					exec = obj.exec = this.#executeExpression(element,node,exp,signalObs);
 					signalObs.addListener(function parseAttribs_signalObserver(){
 						let updateIndex = obj.updateIndex;
 						self.ScopeDom.animFrameHelper.onceRAF(node,signalObs,function parseAttribs_signalObserver_RAF(){
 							if(obj.updateIndex!==updateIndex) return;
 							signalObs.clearSignals();
-							self._updateAttribute(node,name,exec.runFn(),obj,state,updateIndex,signalObs);
+							self.#updateAttribute(node,name,exec.runFn(),obj,state,updateIndex,signalObs);
 						});
 					});
 				}
-				this._updateAttribute(node,name,exec.runFn(),obj,state,updateIndex,signalObs);
+				this.#updateAttribute(node,name,exec.runFn(),obj,state,updateIndex,signalObs);
 			}
 		}
 		// Bind-Safe attribute
-		if(parseBindSafe && parseBindSafe.ready){
-			for(let { exec, exp, signalObs, updateIndex } of [parseBindSafe]){
-				if(exec && onlyOnce) continue;
-				if(onVisible && !isVisible) continue;
+		if(safeBindOption && safeBindOption.ready){
+			for(let { exec, exp, signalObs, updateIndex } of [safeBindOption]){
+				if(exec && onlyOnceOption) continue;
+				if(onVisibleOption && !isVisible) continue;
 				if(!exec){
-					signalObs = parseBindSafe.signalObs = signalCtrl.createObserver();
-					exec = parseBindSafe.exec = this._execExpression(element,element,exp,signalObs);
+					signalObs = safeBindOption.signalObs = signalCtrl.createObserver();
+					exec = safeBindOption.exec = this.#executeExpression(element,element,exp,signalObs);
 					signalObs.addListener(function parseBindSafe_signalObserver(){
-						let updateIndex = parseBindSafe.updateIndex;
+						let updateIndex = safeBindOption.updateIndex;
 						self.ScopeDom.animFrameHelper.onceRAF(element,signalObs,function parseBindSafe_signalObserver_RAF(){
-							if(parseBindSafe.updateIndex!==updateIndex) return;
+							if(safeBindOption.updateIndex!==updateIndex) return;
 							signalObs.clearSignals();
-							self._updateBind(element,false,exec.runFn(),parseBindSafe,state,updateIndex,signalObs);
+							self.#updateBind(element,false,exec.runFn(),safeBindOption,state,updateIndex,signalObs);
 						});
 					});
 				}
-				this._updateBind(element,false,exec.runFn(),parseBindSafe,state,updateIndex,signalObs);
+				this.#updateBind(element,false,exec.runFn(),safeBindOption,state,updateIndex,signalObs);
 			}
 		}
 		// Bind-HTML attribute
-		else if(parseBindHTML && parseBindHTML.ready){
-			for(let { exec, exp, signalObs, updateIndex } of [parseBindHTML]){
-				if(exec && onlyOnce) continue;
-				if(onVisible && !isVisible) continue;
+		else if(htmlBindOption && htmlBindOption.ready){
+			for(let { exec, exp, signalObs, updateIndex } of [htmlBindOption]){
+				if(exec && onlyOnceOption) continue;
+				if(onVisibleOption && !isVisible) continue;
 				if(!exec){
-					signalObs = parseBindHTML.signalObs = signalCtrl.createObserver();
-					exec = parseBindHTML.exec = this._execExpression(element,element,exp,signalObs);
+					signalObs = htmlBindOption.signalObs = signalCtrl.createObserver();
+					exec = htmlBindOption.exec = this.#executeExpression(element,element,exp,signalObs);
 					signalObs.addListener(function parseBindHTML_signalObserver(){
-						let updateIndex = parseBindHTML.updateIndex;
+						let updateIndex = htmlBindOption.updateIndex;
 						self.ScopeDom.animFrameHelper.onceRAF(element,signalObs,function parseBindHTML_signalObserver_RAF(){
-							if(parseBindHTML.updateIndex!==updateIndex) return;
+							if(htmlBindOption.updateIndex!==updateIndex) return;
 							signalObs.clearSignals();
-							self._updateBind(element,true,exec.runFn(),parseBindHTML,state,updateIndex,signalObs);
+							self.#updateBind(element,true,exec.runFn(),htmlBindOption,state,updateIndex,signalObs);
 						});
 					});
 				}
-				this._updateBind(element,true,exec.runFn(),parseBindHTML,state,updateIndex,signalObs);
+				this.#updateBind(element,true,exec.runFn(),htmlBindOption,state,updateIndex,signalObs);
 			}
 		}
 	}
@@ -702,15 +708,15 @@ export class pluginParse {
 	 * @param {Object} signalObs - The signal observer for tracking updates.
 	 * @private
 	 */
-	_updateTextNode(node,result,obj,state,updateIndex,signalObs){
+	#updateTextNode(node,result,obj,state,updateIndex,signalObs){
 		let { options } = state;
 		if(result instanceof Promise){
 			if(updateIndex===0){
-				this._updateTextNode(node,options.defaultText,obj,state,updateIndex,signalObs);
+				this.#updateTextNode(node,options.defaultTextOption,obj,state,updateIndex,signalObs);
 				updateIndex = obj.updateIndex;
 			}
-			let onSuccess = (result)=>this._updateTextNode(node,result,obj,state,updateIndex,signalObs);
-			let onError = ()=>this._updateTextNode(node,options.onError,obj,state,updateIndex,signalObs);
+			let onSuccess = (result)=>this.#updateTextNode(node,result,obj,state,updateIndex,signalObs);
+			let onError = ()=>this.#updateTextNode(node,options.onError,obj,state,updateIndex,signalObs);
 			this.ScopeDom.animFrameHelper.promiseToRAF(result,onSuccess,onError);
 			return;
 		}
@@ -760,12 +766,12 @@ export class pluginParse {
 	 * @param {Object} signalObs - The signal observer for tracking updates.
 	 * @private
 	 */
-	_updateAttribute(element,attribute,result,obj,state,updateIndex,signalObs){
+	#updateAttribute(element,attribute,result,obj,state,updateIndex,signalObs){
 		let { options } = state;
 		result = this.ScopeDom.resolveSignal(result,signalObs);
 		if(result instanceof Promise){
-			let onSuccess = (result)=>this._updateAttribute(element,attribute,result,obj,state,updateIndex,signalObs);
-			let onError = ()=>this._updateAttribute(element,attribute,options.onError,obj,state,updateIndex,signalObs);
+			let onSuccess = (result)=>this.#updateAttribute(element,attribute,result,obj,state,updateIndex,signalObs);
+			let onError = ()=>this.#updateAttribute(element,attribute,options.onError,obj,state,updateIndex,signalObs);
 			this.ScopeDom.animFrameHelper.promiseToRAF(result,onSuccess,onError);
 			return;
 		}
@@ -791,11 +797,11 @@ export class pluginParse {
 	 * @param {Object} signalObs - The signal observer for tracking updates.
 	 * @private
 	 */
-	_updateBind(element,isHTML,result,obj,state,updateIndex,signalObs){
+	#updateBind(element,isHTML,result,obj,state,updateIndex,signalObs){
 		let { options } = state;
 		if(result instanceof Promise){
-			let onSuccess = (result)=>this._updateBind(element,isHTML,result,obj,state,updateIndex,signalObs);
-			let onError = ()=>this._updateBind(element,isHTML,options.onError,obj,state,updateIndex,signalObs);
+			let onSuccess = (result)=>this.#updateBind(element,isHTML,result,obj,state,updateIndex,signalObs);
+			let onError = ()=>this.#updateBind(element,isHTML,options.onError,obj,state,updateIndex,signalObs);
 			this.ScopeDom.animFrameHelper.promiseToRAF(result,onSuccess,onError);
 			return;
 		}
@@ -823,7 +829,7 @@ export class pluginParse {
 		}
 		// Update Result
 		if(current!==result){
-			if(isHTML && hasSetHTML) element.setHTML(result);
+			if(isHTML && hasSetHTMLSupport) element.setHTML(result);
 			else if(isHTML) element.innerHTML = result;
 			else element.textContent = result;
 		}
