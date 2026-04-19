@@ -11,9 +11,24 @@ let hasSetHTML = false;
 	hasSetHTML = 'setHTML' in e && typeof e.setHTML==='function';
 })();
 
+/**
+ * Plugin for parsing expressions within text nodes and attributes.
+ * Supports features like text parsing, tree parsing, once-only execution,
+ * and attribute binding (safe and HTML).
+ *
+ * @class pluginParse
+ */
 export class pluginParse {
+	
+	/**
+	 * @returns {string} The name of the plugin.
+	*/
 	get name(){ return 'parse'; }
 	
+	/**
+	 * @param {Object} ScopeDom - The ScopeDom class.
+	 * @param {Object} instance - The ScopeDom instance.
+	*/
 	constructor(ScopeDom,instance){
 		this.ScopeDom = ScopeDom;
 		this.instance = instance;
@@ -27,6 +42,14 @@ export class pluginParse {
 		this.regexCache = new Map();
 	}
 	
+	/**
+	 * Called when the plugin is connected to an element.
+	 * Checks for the presence of the 'parse' attribute and sets up parsing.
+	 *
+	 * @param {Object} plugInfo - Information about the plugin connection.
+	 * @param {HTMLElement} plugInfo.element - The element being connected.
+	 * @param {Map<string, Object>} plugInfo.attribs - The ScopeDom parsed attributes of the element.
+	*/
 	onConnect(plugInfo){
 		let { element, attribs } = plugInfo;
 		if(!element.isConnected) return;
@@ -39,6 +62,14 @@ export class pluginParse {
 		this._setupParse(plugInfo,parseAttrib);
 	}
 	
+	/**
+	 * Called when the plugin is disconnected from an element.
+	 * Cleans up event listeners, observers, and restores original node/attribute states.
+	 *
+	 * @param {Object} plugInfo - Information about the plugin disconnection.
+	 * @param {HTMLElement} plugInfo.element - The element being disconnected.
+	 * @param {Map<string, Object>} plugInfo.attribs - The ScopeDom parsed attributes of the element.
+	 */
 	onDisconnect(plugInfo){
 		let attrib, { element, attribs } = plugInfo;
 		if(attribs?.size>0) for(let [n,a] of attribs) if(a.nameParts.length===1 && a.nameParts[0]==='parse'){ attrib=a; break; }
@@ -76,6 +107,16 @@ export class pluginParse {
 		element.normalize();
 	}
 	
+	/**
+	 * Sets up the parsing configuration for an element based on its attributes.
+	 * Handles options like text parsing, tree parsing, once-only execution, attribute binding, and custom regex for expressions.
+	 *
+	 * @param {Object} plugInfo - Information about the plugin connection.
+	 * @param {HTMLElement} plugInfo.element - The element being configured.
+	 * @param {Object} plugInfo.elementScopeCtrl - The scope controller for the element.
+	 * @param {Object} attrib - The ScopeDom parsed attributes object.
+	 * @private
+	 */
 	_setupParse(plugInfo,attrib){
 		let { element, elementScopeCtrl } = plugInfo;
 		// Setup Options
@@ -95,31 +136,42 @@ export class pluginParse {
 		let exclude = this._getAttribOption(plugInfo,attrib,attribOpts,'exclude',false,true,true); // $parse:exclude
 		if(exclude.value) this.elementChildExcludeText.add(element);
 		// Option: $parse:exp - Expression Regex
+		// Allows customizing the expression delimiter (default is {{exp}})
 		let expRegex = /(\{\{(.*?)}})/g
 		let expOpt = this._getAttribOption(plugInfo,attrib,attribOpts,'exp',null,false,false); // $parse:exp
 		if(expOpt.value?.length>0){
+			// Execute the custom expression format to get the regex pattern string
 			let { result:optFormatResult } = this.instance.elementExecExp(elementScopeCtrl,expOpt.value,null,{ silentHas:true, useReturn:true });
+			// If the result is cached, use the cached regex
 			if(typeof optFormatResult==='string' && this.regexCache.has(optFormatResult)) optFormatResult = this.regexCache.get(optFormatResult);
 			if(typeof optFormatResult==='string'){
+				// Escape regex special characters to use it as a pattern
 				var result = optFormatResult.replace(/[|\\{}()[\]^$+*?.]/g,'\\$&');
+				// Find the position of 'exp' placeholder in the pattern
 				let pos1 = result.indexOf('exp');
 				if(pos1===-1){ console.warn('pluginParse: invalid format, expecting something like {{exp}}, found',optFormatResult,expOpt?.attribute,element); return false; }
+				// Split the pattern into start and end parts around 'exp'
 				let start = result.substr(0,pos1);
 				let end = result.substr(pos1+3);
+				// Reconstruct the regex with the custom delimiters
 				expRegex = new RegExp('('+start+'(.*?)'+end+')','g');
+				// Validate the regex by checking it matches the expected format
 				let check = [...this.ScopeDom.regexMatchAll(optFormatResult,expRegex)];
 				if(!check || !check?.[0]){ console.warn('pluginParse: invalid format,',result,'('+start+'(.*?)'+end+')',expRegex,check,expOpt?.attribute,element); return false; }
 				if(check?.[0]?.[1]!==optFormatResult){ console.warn('pluginParse: invalid format,',expRegex,check,expOpt?.attribute,element); return false; }
 				if(check?.[0]?.[2]!=='exp'){ console.warn('pluginParse: invalid format, missing exp,',expRegex,check,expOpt?.attribute,element); return false; }
+				// Cache the regex for future use
 				this.regexCache.set(optFormatResult,expRegex);
 			}
+			// If the result is already a RegExp, use it directly
 			else if(optFormatResult instanceof RegExp) expRegex = optFormatResult;
 			else { console.warn('pluginParse: invalid result, expecting string or regex,',optFormatResult,expOpt?.attribute,element); return false; }
 		}
-		// Option: $parse:attrib-name
+		// Option: $parse:attrib-name - Identifies attributes that should be parsed
 		let parseAttribsMap = new Map();
 		let parseAttribNames = new Set();
 		for(let [k,{ optionParts:optParts, value }] of attribOpts){
+			// Only process attributes that start with 'attrib' in their option
 			if(optParts.length<2 || optParts[0]!=='attrib') continue;
 			let name = optParts.slice(1).join('-');
 			parseAttribNames.add(name);
@@ -179,6 +231,19 @@ export class pluginParse {
 		}.bind(this),false);
 	}
 	
+	/**
+	 * Retrieves a specific option from the element's attribute options.
+	 *
+	 * @param {Object} plugInfo - Information about the plugin connection.
+	 * @param {HTMLElement} plugInfo.elementScopeCtrl - The scope controller for the element.
+	 * @param {Object} attrib - The ScopeDom parsed attributes object.
+	 * @param {string} optName - The name of the option to retrieve.
+	 * @param {*} [defaultValue=null] - The default value if the option is not found.
+	 * @param {boolean} [trueOnEmpty=false] - If true, treats empty or null values as true.
+	 * @param {boolean} [runExp=false] - If true, executes the option value as an expression.
+	 * @returns {Object} An object containing the resolved value, raw value, and other metadata.
+	 * @private
+	 */
 	_getAttribOption(plugInfo,attrib,attribOpts,optName,defaultValue=null,trueOnEmpty=false,runExp=false){
 		let { instance } = this;
 		let { elementScopeCtrl } = plugInfo;
@@ -193,8 +258,20 @@ export class pluginParse {
 		return { __proto__:null, value:optValue, raw:opt?.value, attribOption:opt, isDefault };
 	}
 	
+	/**
+	 * Disables the normalize method on elements.
+	 * Logs a warning when called to inform developers that normalize is disabled.
+	 * @private
+	 */
 	_disabledNormalize(){ console.warn('This element has .normalize disabled while parse is being used.'); };
 	
+	/**
+	 * Sets up a MutationObserver to watch for changes in the element's subtree.
+	 * Useful for detecting added/removed nodes that might need parsing.
+	 *
+	 * @param {Object} state - The current parsing state for the element.
+	 * @private
+	 */
 	_setupMutationObserver(state){
 		let { element, parseNodes, options } = state;
 		let { parseBindSafe, parseBindHTML } = options;
@@ -214,10 +291,17 @@ export class pluginParse {
 			}
 			if(check) this._scanParseRunSafe(state);
 		}.bind(this));
+		// Observe changes in the subtree if tree parsing is enabled
 		mutObs.observe(element,{ __proto__:null, subtree:!!options.parseTree, childList:true, attributes:false });
 		this.mutObsMap.set(element,mutObs);
 	}
 	
+	/**
+	 * Sets up an IntersectionObserver to trigger parsing when the element becomes visible.
+	 *
+	 * @param {Object} state - The current parsing state for the element.
+	 * @private
+	 */
 	_setupIntersectionObserver(state){
 		let { element, options } = state;
 		let { onVisible } = options;
@@ -235,6 +319,13 @@ export class pluginParse {
 		this.intObsMap.set(element,intObs);
 	}
 	
+	/**
+	 * Safely triggers a parsing pass.
+	 * It scans for new targets and runs expressions, ensuring that if nodes are pending (due to document loading), it schedules a follow-up check.
+	 *
+	 * @param {Object} state - The current parsing state.
+	 * @private
+	 */
 	_scanParseRunSafe(state){
 		this._scanParseTargets(state);
 		if(!state.parsePending && !state.nodesPending) return; // Helps prevent infinite-check
@@ -245,16 +336,38 @@ export class pluginParse {
 		state.nodesPending = false;
 	}
 	
+	/**
+	 * Registers an event removal function for an element.
+	 *
+	 * @param {HTMLElement} element - The element to track.
+	 * @param {Function} removeEvent - The function to remove the event listener.
+	 * @private
+	 */
 	_registerEvent(element,removeEvent){
 		if(!this.eventMap.has(element)) this.eventMap.set(element,new Set());
 		this.eventMap.get(element).add(removeEvent);
 	}
 	
+	/**
+	 * Scans the element for targets and initiates the parsing process.
+	 *
+	 * @param {Object} state - The current parsing state.
+	 * @prvative
+	 */
 	_scanParseTargets(state){
 		let targets = this._findTargets(state.element,state);
 		this._parseTargets(state,targets);
 	}
 	
+	/**
+	 * Recursively finds elements and attributes that need parsing.
+	 *
+	 * @param {Node} eTarget - The target node to start searching from.
+	 * @param {Object} state - The current parsing state.
+	 * @param {boolean} [recursiveFind=false] - Search child nodes recursively.
+	 * @returns {Object} An object containing sets of nodes and attributes to be parsed.
+	 * @private
+	 */
 	_findTargets(eTarget,state,recursiveFind=false){
 		let { parseNodes, parseAttribNames, parseAttribsMap, options } = state;
 		let { parseTree, parseText, expRegex, parseBindSafe, parseBindHTML } = options;
@@ -290,8 +403,9 @@ export class pluginParse {
 						}
 						if(foundExclude) continue;
 					}
-					// Search child nodes
+					// Recursively search child nodes for parsing targets
 					let { nodes:nodes2, attribs:attribs2 } = this._findTargets(e,state,true);
+					// Merge results
 					if(nodes2.size>0) nodes = nodes.union ? nodes.union(nodes2) : new Set([...nodes,...nodes2]);
 					if(attribs2.size>0) attribs = attribs.union ? attribs.union(attribs2) : new Set([...attribs,...attribs2]);
 				}
@@ -319,11 +433,30 @@ export class pluginParse {
 		return { nodes, attribs };
 	}
 	
+	/**
+	 * Matches expressions in a string using a regex pattern.
+	 * Extracts the outer expression (including delimiters) and inner expression (without delimiters).
+	 * @param {string} str - The string to search for expressions.
+	 * @param {RegExp} regex - The regex pattern to match expressions.
+	 * @returns {Array} An array of match objects, each containing:
+	 *   - expOuter: The full expression including delimiters
+	 *   - expInner: The expression content without delimiters
+	 *   - regexIndex: The starting index of the match in the string
+	 * @private
+	 */
 	__regexMatchExp(str,regex){
 		let match, matches=[]; regex.lastIndex=0;
 		while(match=regex.exec(str)) matches.push({ expOuter:match[1], expInner:match[2], regexIndex:match.index });
 		return matches;
 	}
+	
+	/**
+	 * Performs the actual parsing of the identified targets (text nodes and attributes).
+	 *
+	 * @param {Object} state - The current parsing state.
+	 * @param {Object} targets - The targets to be parsed (nodes and attributes).
+	 * @private
+	 */
 	_parseTargets(state,targets){
 		let { parseNodes, parseAttribsMap, options } = state;
 		let { expRegex } = options;
@@ -331,13 +464,14 @@ export class pluginParse {
 		// Parse text nodes
 		if(pendingNodes.size>0){
 			for(let e of pendingNodes){
+				// Extract matched expressions from text node using regex
 				let text=e.data, textLen=text.length, matches=this.__regexMatchExp(text,expRegex), index=0, nodes=[];
 				for(let { expOuter, expInner, regexIndex } of matches){
 					let parseNode, start=index, pos=regexIndex, end=regexIndex+expOuter.length;
 					index = end;
-					// If text node is only expression, re-use same node
+					// If text node is only expression, re-use same node (no splitting needed)
 					if(start===0 && pos===0 && index===textLen) parseNode = e;
-					// Otherwise split into multiple nodes
+					// Otherwise split into multiple nodes (before text, expression, after text)
 					else {
 						let beforeStr = text.substr(start,pos-start);
 						if(beforeStr.length>0) nodes.push(document.createTextNode(beforeStr));
@@ -361,6 +495,7 @@ export class pluginParse {
 		// Parse attribute values
 		if(pendingAttribs.size>0){
 			for(let { element:e, name, value:text } of pendingAttribs){
+				// Parse attribute values using regex matching
 				let matches=this.__regexMatchExp(text,expRegex), index=0, expArr=[];
 				for(let { expOuter, expInner, regexIndex } of matches){
 					let start=index, pos=regexIndex, end=regexIndex+expOuter.length;
@@ -379,6 +514,14 @@ export class pluginParse {
 		}
 	}
 	
+	/**
+	 * Reverts a parsed text node back to its original content.
+	 * Used during cleanup when the element is disconnected.
+	 *
+	 * @param {Object} state - The current parsing state.
+	 * @param {Text} node - The text node to revert.
+	 * @private
+	 */
 	_undoNodeParse(state,node){
 		let { parseNodes } = state;
 		let obj = parseNodes.get(node);
@@ -393,6 +536,15 @@ export class pluginParse {
 		if(this.allParseTextNodes.has(node)) this.allParseTextNodes.delete(node);
 		parseNodes.delete(node);
 	}
+	
+	/**
+	 * Reverts a parsed attribute back to its original value.
+	 * Used during cleanup when the element is disconnected.
+	 *
+	 * @param {Object} state - The current parsing state.
+	 * @param {string} name - The attribute name to revert.
+	 * @private
+	 */
 	_undoAttribParse(state,name){
 		let { element, parseAttribsMap } = state;
 		let obj = parseAttribsMap.get(element)?.get(name);
@@ -403,6 +555,15 @@ export class pluginParse {
 			obj.signalObs?.clear(); obj.signalObs = obj.exec = null;
 		}
 	}
+	
+	/**
+	 * Reverts a parsed binding back to its original content.
+	 * Used during cleanup when the element is disconnected.
+	 *
+	 * @param {Object} state - The current parsing state.
+	 * @param {HTMLElement} element - The element to revert.
+	 * @private
+	 */
 	_undoBindParse(state,element){
 		let { parseBindSafe, parseBindHTML } = state.options;
 		if(parseBindHTML){
@@ -415,6 +576,17 @@ export class pluginParse {
 		}
 	}
 	
+	/**
+	 * Executes an expression in the context of a node.
+	 * Creates a signal observer and wraps the run function for signal tracking.
+	 *
+	 * @param {HTMLElement} element - The root element for the expression context.
+	 * @param {Text} node - The text node to execute the expression in.
+	 * @param {string} exp - The expression to execute.
+	 * @param {Object} signalObs - The signal observer to wrap the run function.
+	 * @returns {Object} The execution result.
+	 * @private
+	 */
 	_execExpression(element,node,exp,signalObs){
 		let eCtrl = this.instance.elementScopeCtrl(node);
 		let exec = this.instance.elementExecExp(eCtrl,exp,{ $node:node, $expression:exp, $parseRoot:element },{ silentHas:true, useReturn:true, run:false });
@@ -422,6 +594,12 @@ export class pluginParse {
 		return exec;
 	}
 	
+	/**
+	 * Executes the parsing logic for all identified text nodes, attributes, and bindings.
+	 *
+	 * @param {Object} state - The current parsing state.
+	 * @private
+	 */
 	_runParseExpressions(state){
 		let { signalCtrl, element, parseNodes, parseAttribsMap, isVisible, options } = state;
 		let { onlyOnce, parseBindSafe, parseBindHTML, onVisible } = options;
@@ -513,6 +691,17 @@ export class pluginParse {
 		}
 	}
 	
+	/**
+	 * Updates the content of a text node with the result of an expression.
+	 *
+	 * @param {Text} node - The text node to update.
+	 * @param {*} result - The result of the expression execution.
+	 * @param {Object} obj - The parsing object for this node.
+	 * @param {Object} state - The current parsing state.
+	 * @param {number} updateIndex - The current update iteration index.
+	 * @param {Object} signalObs - The signal observer for tracking updates.
+	 * @private
+	 */
 	_updateTextNode(node,result,obj,state,updateIndex,signalObs){
 		let { options } = state;
 		if(result instanceof Promise){
@@ -559,6 +748,18 @@ export class pluginParse {
 		if(obj.anchor && (!obj.anchor.isConnected || node.nextSibling!==obj.anchor)){ obj.skipUndo=true; obj.anchor.parentNode.insertBefore(node,obj.anchor); }
 	}
 	
+	/**
+	 * Updates an element's attribute with the result of an expression.
+	 *
+	 * @param {HTMLElement} element - The element to update.
+	 * @param {string} attribute - The attribute name.
+	 * @param {*} result - The result of the expression execution.
+	 * @param {Object} obj - The parsing object for this attribute.
+	 * @param {Object} state - The current parsing state.
+	 * @param {number} updateIndex - The current update iteration index.
+	 * @param {Object} signalObs - The signal observer for tracking updates.
+	 * @private
+	 */
 	_updateAttribute(element,attribute,result,obj,state,updateIndex,signalObs){
 		let { options } = state;
 		result = this.ScopeDom.resolveSignal(result,signalObs);
@@ -577,6 +778,19 @@ export class pluginParse {
 		else if(result?.length>=0){ result=''+result; if(element.getAttribute(attribute)!==result) element.setAttribute(attribute,result); }
 	}
 	
+	/**
+	 * Updates an element's content (innerHTML or textContent) based on a binding.
+	 *
+	 * @param {HTMLElement} element - The element to update.
+	 * @
+	 * @param {boolean} isHTML - If binding is for HTML content.
+	 * @param {*} result - The result of the expression execution.
+	 * @param {Object} obj - The parsing object for this binding.
+	 * @param {Object} state - The current parsing state.
+	 * @param {number} updateIndex - The current update iteration index.
+	 * @param {Object} signalObs - The signal observer for tracking updates.
+	 * @private
+	 */
 	_updateBind(element,isHTML,result,obj,state,updateIndex,signalObs){
 		let { options } = state;
 		if(result instanceof Promise){
