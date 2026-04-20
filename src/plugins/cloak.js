@@ -27,11 +27,11 @@ export class pluginCloak {
 		// Fallback value
 		if(value===null) value = instance.elementAttribFallbackOptionValue(attrib,['dom','swap']);
 		// Options
-		let updateEvent = this._getAttribOption(plugInfo,attrib,attribOpts,'update scope','$update',false,true).value; // $cloak:update-scope='event', $emit('event')
-		let updateDomEvent = this._getAttribOption(plugInfo,attrib,attribOpts,'update dom','$update',false,true).value; // $cloak:update-dom='event', $emitDom('event')
-		let onShowEvent = this._getAttribOption(plugInfo,attrib,attribOpts,'on show',null,false,false).value; // $cloak:on-show='exp'
-		let anchor, anchorScopeCtrl, domSwap = this._getAttribOption(plugInfo,attrib,attribOpts,'dom',false,true,true).value; // $cloak:dom
-		let tplSwap = element.nodeName==='TEMPLATE' ? this._getAttribOption(plugInfo,attrib,attribOpts,'swap',false,true,true).value : false; // <template $cloak:swap>
+		let updateEvent = instance.elementAttribParseOption(element,attribOpts,'update scope',{ default:'$update', emptyTrue:false, runExp:true }).value; // $cloak:update-scope='event', $emit('event')
+		let updateDomEvent = instance.elementAttribParseOption(element,attribOpts,'update dom',{ default:'$update', emptyTrue:false, runExp:true }).value; // $cloak:update-dom='event', $emitDom('event')
+		let onShowEvent = instance.elementAttribParseOption(element,attribOpts,'on show',{ default:null, emptyTrue:false, runExp:false }).value; // $cloak:on-show='exp'
+		let anchor, anchorScopeCtrl, domSwap = instance.elementAttribParseOption(element,attribOpts,'dom',{ default:false, emptyTrue:true, runExp:true }).value; // $cloak:dom
+		let tplSwap = element.nodeName==='TEMPLATE' ? instance.elementAttribParseOption(element,attribOpts,'swap',{ default:false, emptyTrue:true, runExp:true }).value : false; // <template $cloak:swap>
 		// State
 		let state = { elementScopeCtrl, attrib, attribOpts, anchor, anchorScopeCtrl, onShowEvent, tplSwap };
 		this.stateMap.set(element,state);
@@ -82,19 +82,6 @@ export class pluginCloak {
 	_registerEvent(element,removeEvent){
 		if(!this.eventMap.has(element)) this.eventMap.set(element,new Set());
 		this.eventMap.get(element).add(removeEvent);
-	}
-	_getAttribOption(plugInfo,attrib,attribOpts,optName,defaultValue=null,trueOnEmpty=false,runExp=false){
-		let { instance } = this;
-		let { elementScopeCtrl } = plugInfo;
-		let { isDefault, attribute, nameKey, nameParts, value } = attrib;
-		let optValue = defaultValue, opt = attribOpts.get(optName)
-		if(trueOnEmpty && (opt?.value==='' || opt?.value===null)) optValue = true;
-		else if(runExp && opt?.value?.length>0){
-			let { result } = instance.elementExecExp(elementScopeCtrl,opt.value,null,{ silentHas:true, useReturn:true });
-			if(typeof result!==void 0) optValue = result;
-		}
-		else if(!runExp && opt?.value?.length>0) optValue = opt.value;
-		return { value:optValue, raw:opt?.value, attribOption:opt, isDefault };
 	}
 	
 	_removeAttribs(element,attrib,attribOpts){

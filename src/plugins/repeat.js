@@ -101,19 +101,17 @@ export class pluginRepeat {
 		if(value===null) value = instance.elementAttribFallbackOptionValue(attrib,['once','node']);
 		// Options
 		let attribOpts = instance.elementAttribOptionsWithDefaults(element,attrib);
-		let onlyOnce = this._getAttribOption(plugInfo,attrib,attribOpts,'once',false,true,true); // $repeat:once
-		let updateEvent = this._getAttribOption(plugInfo,attrib,attribOpts,'update scope','$update',false,true).value; // $repeat:update-scope='event', $emit('event')
-		let updateDomEvent = this._getAttribOption(plugInfo,attrib,attribOpts,'update dom','$update',false,true).value; // $repeat:update-dom='event', $emitDom('event')
-		let keyName = this._getAttribOption(plugInfo,attrib,attribOpts,'key','$key',false,false).value; // $repeat:key="$key"
-		let itemName = this._getAttribOption(plugInfo,attrib,attribOpts,'item','$item',false,false).value; // $repeat:item="$item"
-		let scopeName = this._getAttribOption(plugInfo,attrib,attribOpts,'scope',null,false,false).value; // $repeat:scope="$repeat1"
-		let useElement = this._getAttribOption(plugInfo,attrib,attribOpts,'use',null,false,true);
-		let includeNode = this._getAttribOption(plugInfo,attrib,attribOpts,'node',false,true,true);
-		let onUpdateEvent = this._getAttribOption(plugInfo,attrib,attribOpts,'on update',null,false,false).value; // $repeat:on-update
-		let cacheList = this._getAttribOption(plugInfo,attrib,attribOpts,'cache',1,false,true).value;
+		let onlyOnce = instance.elementAttribParseOption(element,attribOpts,'once',{ default:false, emptyTrue:true, runExp:true }).value; // $repeat:once
+		let updateEvent = instance.elementAttribParseOption(element,attribOpts,'update scope',{ default:'$update', emptyTrue:false, runExp:true }).value; // $repeat:update-scope='event', $emit('event')
+		let updateDomEvent = instance.elementAttribParseOption(element,attribOpts,'update dom',{ default:'$update', emptyTrue:false, runExp:true }).value; // $repeat:update-dom='event', $emitDom('event')
+		let keyName = instance.elementAttribParseOption(element,attribOpts,'key',{ default:'$key', emptyTrue:false, runExp:false }).value; // $repeat:key="$key"
+		let itemName = instance.elementAttribParseOption(element,attribOpts,'item',{ default:'$item', emptyTrue:false, runExp:false }).value; // $repeat:item="$item"
+		let scopeName = instance.elementAttribParseOption(element,attribOpts,'scope',{ default:null, emptyTrue:false, runExp:false }).value; // $repeat:scope="$repeat1"
+		let useElement = instance.elementAttribParseOption(element,attribOpts,'use',{ default:null, emptyTrue:false, runExp:true });
+		let includeNode = instance.elementAttribParseOption(element,attribOpts,'node',{ default:false, emptyTrue:true, runExp:true }).value;
+		let onUpdateEvent = instance.elementAttribParseOption(element,attribOpts,'on update',{ default:null, emptyTrue:false, runExp:false }).value; // $repeat:on-update
+		let cacheList = instance.elementAttribParseOption(element,attribOpts,'cache',{ default:1, emptyTrue:false, runExp:true }).value;
 		cacheList = parseFloat(cacheList)*1000; if(cacheList+''==='NaN' || cacheList<0) cacheList = 0;
-		onlyOnce = onlyOnce.value;
-		includeNode = includeNode.value;
 		// New State
 		let mainTemplate, fromElement, fromElementAnchor, fromElementConnected, elementChildren, anchorStart, anchorEnd, createAnchorAfter, elementAnchor=element;
 		let state = { __proto__:null,
@@ -266,20 +264,6 @@ export class pluginRepeat {
 	_registerEvent(element,removeEvent){
 		if(!this.eventMap.has(element)) this.eventMap.set(element,new Set());
 		this.eventMap.get(element).add(removeEvent);
-	}
-	_getAttribOption(plugInfo,attrib,attribOpts,optName,defaultValue=null,trueOnEmpty=false,runExp=false){
-		let { instance } = this;
-		let { element, elementScopeCtrl, attribs } = plugInfo;
-		let { isDefault, attribute, nameKey, nameParts, value } = attrib;
-		let optValue = defaultValue, opt = attribOpts.get(optName), execResult;
-		if(trueOnEmpty && (opt?.value==='' || opt?.value===null)) optValue = true;
-		else if(runExp && opt?.value!==void 0){
-			let result = this._execExpression(plugInfo,opt.value,true,null).runFn();
-			execResult = result;
-			if(typeof result!==void 0) optValue = result;
-		}
-		else if(!runExp && opt?.value?.length>0) optValue = opt.value;
-		return { __proto__:null, value:optValue, raw:opt?.value, attribOption:opt, isDefault, execResult };
 	}
 	
 	_execExpression(plugInfo,exp,useReturn=true,extra=null,signalObs=null){

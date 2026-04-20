@@ -26,7 +26,6 @@ export class pluginParse {
 	get name(){ return 'parse'; }
 	static get name(){ return 'parse'; }
 	
-	#isElementLoaded;
 	#eventRemovalMap; #mutationObserverMap; #intersectionObserverMap;
 	#parseStateMap; #parsedTextNodesSet; #childExcludeTextSet; #expressionRegexCache;
 	
@@ -37,7 +36,6 @@ export class pluginParse {
 	constructor(ScopeDom,instance){
 		this.ScopeDom = ScopeDom;
 		this.instance = instance;
-		this.#isElementLoaded = ScopeDom.isElementLoaded;
 		this.#eventRemovalMap = new WeakMap(); // per element-set
 		this.#mutationObserverMap = new WeakMap(); // per element
 		this.#intersectionObserverMap = new WeakMap(); // per element
@@ -123,30 +121,31 @@ export class pluginParse {
 	 * @private
 	 */
 	#configureParse(plugInfo,attrib){
+		let { instance } = this;
 		let { element, elementScopeCtrl } = plugInfo;
 		// Setup Options
-		let attributeOptions = this.instance.elementAttribOptionsWithDefaults(element,attrib);
+		let attributeOptions = instance.elementAttribOptionsWithDefaults(element,attrib);
 		// Options
-		let parseTextOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'text',false,true,true); // $parse:text
-		let parseTreeOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'tree',false,true,true); // $parse:tree
-		let onlyOnceOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'once',false,true,true); // $parse:once
-		let updateScopeEventOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'update scope','$update',false,true); // $parse:update-scope='event', $emit('event')
-		let updateDomEventOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'update dom','$update',false,true); // $parse:update-dom='event', $emitDom('event')
-		let errorHandler = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'error','',false,true); // $parse:error
-		let allowDomResult = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'allow dom',false,true,true); // $parse:allow-dom
-		let visibleOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'visible',false,true,true); // $parse:visible
-		let defaultTextOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'default text','...',false,true); // $parse:default-text
-		let safeModeOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'safe',false,true,true); // $parse:once
+		let parseTextOption = instance.elementAttribParseOption(element,attributeOptions,'text',{ default:false, emptyTrue:true, runExp:true }); // $parse:text
+		let parseTreeOption = instance.elementAttribParseOption(element,attributeOptions,'tree',{ default:false, emptyTrue:true, runExp:true }); // $parse:tree
+		let onlyOnceOption = instance.elementAttribParseOption(element,attributeOptions,'once',{ default:false, emptyTrue:true, runExp:true }); // $parse:once
+		let updateScopeEventOption = instance.elementAttribParseOption(element,attributeOptions,'update scope',{ default:'$update', emptyTrue:false, runExp:true }); // $parse:update-scope='event', $emit('event')
+		let updateDomEventOption = instance.elementAttribParseOption(element,attributeOptions,'update dom',{ default:'$update', emptyTrue:false, runExp:true }); // $parse:update-dom='event', $emitDom('event')
+		let errorHandler = instance.elementAttribParseOption(element,attributeOptions,'error',{ default:'', emptyTrue:false, runExp:true }); // $parse:error
+		let allowDomResult = instance.elementAttribParseOption(element,attributeOptions,'allow dom',{ default:false, emptyTrue:true, runExp:true }); // $parse:allow-dom
+		let visibleOption = instance.elementAttribParseOption(element,attributeOptions,'visible',{ default:false, emptyTrue:true, runExp:true }); // $parse:visible
+		let defaultTextOption = instance.elementAttribParseOption(element,attributeOptions,'default text',{ default:'...', emptyTrue:false, runExp:true }); // $parse:default-text
+		let safeModeOption = instance.elementAttribParseOption(element,attributeOptions,'safe',{ default:false, emptyTrue:true, runExp:true }); // $parse:once
 		// Option: $parse:exclude
-		let excludeOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'exclude',false,true,true); // $parse:exclude
+		let excludeOption = instance.elementAttribParseOption(element,attributeOptions,'exclude',{ default:false, emptyTrue:true, runExp:true }); // $parse:exclude
 		if(excludeOption.value) this.#childExcludeTextSet.add(element);
 		// Option: $parse:exp - Expression Regex
 		// Allows customizing the expression delimiter (default is {{exp}})
 		let expressionRegex = /(\{\{(.*?)}})/g
-		let expressionOption = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'exp',null,false,false); // $parse:exp
+		let expressionOption = instance.elementAttribParseOption(element,attributeOptions,'exp',{ default:null, emptyTrue:false, runExp:false }); // $parse:exp
 		if(expressionOption.value?.length>0){
 			// Execute the custom expression format to get the regex pattern string
-			let { result:formattedResult } = this.instance.elementExecExp(elementScopeCtrl,expressionOption.value,null,{ silentHas:true, useReturn:true });
+			let { result:formattedResult } = instance.elementExecExp(elementScopeCtrl,expressionOption.value,null,{ silentHas:true, useReturn:true });
 			// If the result is cached, use the cached regex
 			if(typeof formattedResult==='string' && this.#expressionRegexCache.has(formattedResult)) formattedResult = this.#expressionRegexCache.get(formattedResult);
 			if(typeof formattedResult==='string'){
@@ -159,7 +158,7 @@ export class pluginParse {
 				let start = result.substr(0,pos1);
 				let end = result.substr(pos1+3);
 				// Reconstruct the regex with the custom delimiters
-				expressionRegex = new RegExp('('+start+'(.*?)'+end+')','g');
+				expressionRegex = new RegExp(`(${start}(.*?)${end})`,'g');
 				// Validate the regex by checking it matches the expected format
 				let check = [...this.ScopeDom.regexMatchAll(formattedResult,expressionRegex)];
 				if(!check || !check?.[0]){ console.warn('pluginParse: invalid format,',result,'('+start+'(.*?)'+end+')',expressionRegex,check,expressionOption?.attribute,element); return false; }
@@ -188,8 +187,8 @@ export class pluginParse {
 		}
 		// Option: $parse:bind & $parse:bind-html - Parse Bind - Auto-Excludes if no tree or text on same element.
 		let safeBindOption = false, htmlBindOption = false;
-		let bindSafe = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'bind',false,false,false); // $parse:bind
-		let bindHTML = this.#getOptionFromAttribute(plugInfo,attrib,attributeOptions,'bind html',false,false,false); // $parse:bind-html
+		let bindSafe = instance.elementAttribParseOption(element,attributeOptions,'bind',{ default:false, emptyTrue:false, runExp:false }); // $parse:bind
+		let bindHTML = instance.elementAttribParseOption(element,attributeOptions,'bind html',{ default:false, emptyTrue:false, runExp:false }); // $parse:bind-html
 		if(!(parseTreeOption.value && !parseTreeOption.isDefault) && !(parseTextOption.value && !parseTextOption.isDefault)){
 			if(bindSafe.value?.length>0) safeBindOption = { __proto__:null, exec:null, signalObs:null, exp:bindSafe.value, original:element.textContent, ready:false };
 			else if(bindHTML.value?.length>0) htmlBindOption = { __proto__:null, exec:null, signalObs:null, exp:bindHTML.value, original:element.innerHTML, ready:false };
@@ -222,7 +221,7 @@ export class pluginParse {
 		// Add $parse() to element & element context
 		elementScopeCtrl.execContext.$parse = element.$parse = executeParseTrigger;
 		// Continue when ready
-		this.instance.onReady(function onReadyPluginParse(){
+		instance.onReady(function onReadyPluginParse(){
 			// Find & watch targets
 			this.#discoverParseTargets(state);
 			// Observe later nodes
@@ -234,34 +233,6 @@ export class pluginParse {
 			// If more parsing is needed
 			if(state.nodesPending) this.#safelyScanAndParse(state);
 		}.bind(this),false);
-	}
-	
-	/**
-	 * Retrieves a specific option from the element's attribute options.
-	 *
-	 * @param {Object} plugInfo - Information about the plugin connection.
-	 * @param {HTMLElement} plugInfo.elementScopeCtrl - The scope controller for the element.
-	 * @param {Object} attrib - The ScopeDom parsed attributes object.
-	 * @param {Object} attributeOptions - The ScopeDom parsed attribute options Map.
-	 * @param {string} optName - The name of the option to retrieve.
-	 * @param {*} [defaultValue=null] - The default value if the option is not found.
-	 * @param {boolean} [trueOnEmpty=false] - If true, treats empty or null values as true.
-	 * @param {boolean} [runExp=false] - If true, executes the option value as an expression.
-	 * @returns {Object} An object containing the resolved value, raw value, and other metadata.
-	 * @private
-	 */
-	#getOptionFromAttribute(plugInfo,attrib,attributeOptions,optName,defaultValue=null,trueOnEmpty=false,runExp=false){
-		let { instance } = this;
-		let { elementScopeCtrl } = plugInfo;
-		let { isDefault, attribute, nameKey, nameParts, value } = attrib;
-		let optionValue = defaultValue, option = attributeOptions.get(optName)
-		if(trueOnEmpty && (option?.value==='' || option?.value===null)) optionValue = true;
-		else if(runExp && option?.value?.length>0){
-			let { result } = instance.elementExecExp(elementScopeCtrl,option.value,null,{ silentHas:true, useReturn:true });
-			if(typeof result!==void 0) optionValue = result;
-		}
-		else if(!runExp && option?.value?.length>0) optionValue = option.value;
-		return { __proto__:null, value:optionValue, raw:option?.value, attribOption:option, isDefault };
 	}
 	
 	/**
@@ -379,7 +350,7 @@ export class pluginParse {
 		let { parseTreeOption, parseTextOption, expressionRegex, safeBindOption, htmlBindOption } = options;
 		let targetNodes = new Set(), targetAttribs = new Set();
 		if(parseTreeOption || parseTextOption){
-			for(let childElement of targetNode.childNodes){
+			for(let childElement of [...targetNode.childNodes]){
 				if(this.instance.isElementIgnored(childElement,false)) continue; // $ignore
 				if(childElement.nodeType!==elementNodeType && childElement.nodeType!==textNodeType) continue;
 				if(childElement.shadowRoot || childElement.nodeName==='TEMPLATE' || childElement.nodeName==='SCRIPT' || childElement.nodeName==='STYLE') continue;
