@@ -20,7 +20,7 @@ const hasMoveBeforeSupport = 'moveBefore' in Element.prototype && typeof Element
 export class pluginRepeat {
 	
 	/**
-	 * @returns {string} The name of the plugin.
+	 * @returns {string} The name of the plugin
 	 */
 	get name(){ return 'repeat'; }
 	static get name(){ return 'repeat'; }
@@ -28,8 +28,8 @@ export class pluginRepeat {
 	#eventMap; #stateMap; #afterElementDC;
 	
 	/**
-	 * @param {Object} ScopeDom - The ScopeDom class.
-	 * @param {Object} instance - The ScopeDom instance.
+	 * @param {Object} ScopeDom - The ScopeDom class
+	 * @param {Object} instance - The ScopeDom instance
 	 */
 	constructor(ScopeDom,instance){
 		this.ScopeDom = ScopeDom;

@@ -3,20 +3,20 @@
 /** @type {number} Text node type constant from `document.TEXT_NODE`. */
 const textNodeType = document.TEXT_NODE;
 
-/** Symbol key used to signal that a Promise result is waiting for case-match evaluation. */
+/** Symbol key used to signal that a Promise result is waiting for case-match evaluation */
 const matchCasePromiseWaitSymbol = Symbol('pluginIf-matchCase-promise-wait');
 
-/** Symbol key used to store the resolved promise value in case-match results. */
+/** Symbol key used to store the resolved promise value in case-match results */
 const matchCasePromiseResultSymbol = Symbol('pluginIf-matchCase-promise-result');
 
-/** Symbol key identifying special operator functions (OR/AND/NOT) within `matchCaseScope`. */
+/** Symbol key identifying special operator functions (OR/AND/NOT) within `matchCaseScope` */
 const matchCaseOperatorSymbol = Symbol('pluginIf-matchCaseScope-operator');
 
 /**
  * Factory function that creates a callable function with an attached operator symbol.
  * Used by {@link matchCaseScope} to produce OR/AND/NOT operators for case matching.
- * @param {string} op - The operator name ('or', 'and', or 'not').
- * @param {Array} arr - The array of values to operate on.
+ * @param {string} op - The operator name ('or', 'and', or 'not')
+ * @param {Array} arr - The array of values to operate on
  */
 const matchCaseOperatorFn = (op,arr)=>{
 	let fn=_=>arr; fn[matchCaseOperatorSymbol]=op; return fn;
@@ -24,10 +24,10 @@ const matchCaseOperatorFn = (op,arr)=>{
 
 /**
  * Pre-frozen object providing special operator functions for case matching:
- * - `_()` — always returns true.
- * - `_or(...values)` — returns true if any value matches.
- * - `_and(...values)` — returns true only if all values match.
- * - `_not(...values)` — returns true if no values match.
+ * - `_()` — always returns true
+ * - `_or(...values)` — returns true if any value matches
+ * - `_and(...values)` — returns true only if all values match
+ * - `_not(...values)` — returns true if no values match
  */
 const matchCaseScope = Object.freeze({
 	_(v){ return true; },

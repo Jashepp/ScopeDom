@@ -21,7 +21,7 @@ let hasSetHTMLSupport = false;
 export class pluginParse {
 	
 	/**
-	 * @returns {string} The name of the plugin.
+	 * @returns {string} The name of the plugin
 	*/
 	get name(){ return 'parse'; }
 	static get name(){ return 'parse'; }
@@ -30,8 +30,8 @@ export class pluginParse {
 	#parseStateMap; #parsedTextNodesSet; #childExcludeTextSet; #expressionRegexCache;
 	
 	/**
-	 * @param {Object} ScopeDom - The ScopeDom class.
-	 * @param {Object} instance - The ScopeDom instance.
+	 * @param {Object} ScopeDom - The ScopeDom class
+	 * @param {Object} instance - The ScopeDom instance
 	*/
 	constructor(ScopeDom,instance){
 		this.ScopeDom = ScopeDom;
@@ -49,9 +49,9 @@ export class pluginParse {
 	 * Called when the plugin is connected to an element.
 	 * Checks for the presence of the 'parse' attribute and sets up parsing.
 	 *
-	 * @param {Object} plugInfo - Information about the plugin connection.
-	 * @param {HTMLElement} plugInfo.element - The element being connected.
-	 * @param {Map<string, Object>} plugInfo.attribs - The ScopeDom parsed attributes of the element.
+	 * @param {Object} plugInfo - Information about the plugin connection
+	 * @param {HTMLElement} plugInfo.element - The element being connected
+	 * @param {Map<string, Object>} plugInfo.attribs - The ScopeDom parsed attributes of the element
 	*/
 	onConnect(plugInfo){
 		let { element, attribs } = plugInfo;
@@ -69,9 +69,9 @@ export class pluginParse {
 	 * Called when the plugin is disconnected from an element.
 	 * Cleans up event listeners, observers, and restores original node/attribute states.
 	 *
-	 * @param {Object} plugInfo - Information about the plugin disconnection.
-	 * @param {HTMLElement} plugInfo.element - The element being disconnected.
-	 * @param {Map<string, Object>} plugInfo.attribs - The ScopeDom parsed attributes of the element.
+	 * @param {Object} plugInfo - Information about the plugin disconnection
+	 * @param {HTMLElement} plugInfo.element - The element being disconnected
+	 * @param {Map<string, Object>} plugInfo.attribs - The ScopeDom parsed attributes of the element
 	 */
 	onDisconnect(plugInfo){
 		let attrib, { element, attribs } = plugInfo;
@@ -114,10 +114,10 @@ export class pluginParse {
 	 * Sets up the parsing configuration for an element based on its attributes.
 	 * Handles options like text parsing, tree parsing, once-only execution, attribute binding, and custom regex for expressions.
 	 *
-	 * @param {Object} plugInfo - Information about the plugin connection.
-	 * @param {HTMLElement} plugInfo.element - The element being configured.
-	 * @param {Object} plugInfo.elementScopeCtrl - The scope controller for the element.
-	 * @param {Object} attrib - The ScopeDom parsed attributes object.
+	 * @param {Object} plugInfo - Information about the plugin connection
+	 * @param {HTMLElement} plugInfo.element - The element being configured
+	 * @param {Object} plugInfo.elementScopeCtrl - The scope controller for the element
+	 * @param {Object} attrib - The ScopeDom parsed attributes object
 	 * @private
 	 */
 	#configureParse(plugInfo,attrib){
@@ -238,6 +238,7 @@ export class pluginParse {
 	/**
 	 * Disables the normalize method on elements.
 	 * Logs a warning when called to inform developers that normalize is disabled.
+	 * 
 	 * @private
 	 */
 	#noopNormalize(){ console.warn('This element has .normalize disabled while parse is being used.'); };
@@ -246,7 +247,7 @@ export class pluginParse {
 	 * Sets up a MutationObserver to watch for changes in the element's subtree.
 	 * Useful for detecting added/removed nodes that might need parsing.
 	 *
-	 * @param {Object} state - The current parsing state for the element.
+	 * @param {Object} state - The current parsing state for the element
 	 * @private
 	 */
 	#initializeMutationObserver(state){
@@ -276,7 +277,7 @@ export class pluginParse {
 	/**
 	 * Sets up an IntersectionObserver to trigger parsing when the element becomes visible.
 	 *
-	 * @param {Object} state - The current parsing state for the element.
+	 * @param {Object} state - The current parsing state for the element
 	 * @private
 	 */
 	#initializeIntersectionObserver(state){
@@ -300,7 +301,7 @@ export class pluginParse {
 	 * Safely triggers a parsing pass.
 	 * It scans for new targets and runs expressions, ensuring that if nodes are pending (due to document loading), it schedules a follow-up check.
 	 *
-	 * @param {Object} state - The current parsing state.
+	 * @param {Object} state - The current parsing state
 	 * @private
 	 */
 	#safelyScanAndParse(state){
@@ -316,8 +317,8 @@ export class pluginParse {
 	/**
 	 * Registers an event removal function for an element.
 	 *
-	 * @param {HTMLElement} element - The element to track.
-	 * @param {Function} removeEvent - The function to remove the event listener.
+	 * @param {HTMLElement} element - The element to track
+	 * @param {Function} removeEvent - The function to remove the event listener
 	 * @private
 	 */
 	#registerEventRemoval(element,removeEvent){
@@ -328,7 +329,7 @@ export class pluginParse {
 	/**
 	 * Scans the element for targets and initiates the parsing process.
 	 *
-	 * @param {Object} state - The current parsing state.
+	 * @param {Object} state - The current parsing state
 	 * @private
 	 */
 	#discoverParseTargets(state){
@@ -339,10 +340,10 @@ export class pluginParse {
 	/**
 	 * Recursively finds elements and attributes that need parsing.
 	 *
-	 * @param {Node} targetNode - The target node to start searching from.
-	 * @param {Object} state - The current parsing state.
-	 * @param {boolean} [isRecursive=false] - Search child nodes recursively.
-	 * @returns {Object} An object containing sets of nodes and attributes to be parsed.
+	 * @param {Node} targetNode - The target node to start searching from
+	 * @param {Object} state - The current parsing state
+	 * @param {boolean} [isRecursive=false] - Search child nodes recursively
+	 * @returns {Object} An object containing sets of nodes and attributes to be parsed
 	 * @private
 	 */
 	#locateParseTargets(targetNode,state,isRecursive=false){
@@ -413,8 +414,9 @@ export class pluginParse {
 	/**
 	 * Matches expressions in a string using a regex pattern.
 	 * Extracts the outer expression (including delimiters) and inner expression (without delimiters).
-	 * @param {string} str - The string to search for expressions.
-	 * @param {RegExp} regex - The regex pattern to match expressions.
+	 * 
+	 * @param {string} str - The string to search for expressions
+	 * @param {RegExp} regex - The regex pattern to match expressions
 	 * @returns {Array} An array of match objects, each containing:
 	 *   - expOuter: The full expression including delimiters
 	 *   - expInner: The expression content without delimiters
@@ -430,8 +432,8 @@ export class pluginParse {
 	/**
 	 * Performs the actual parsing of the identified targets (text nodes and attributes).
 	 *
-	 * @param {Object} state - The current parsing state.
-	 * @param {Object} targetNodes - The targets to be parsed (nodes and attributes).
+	 * @param {Object} state - The current parsing state
+	 * @param {Object} targetNodes - The targets to be parsed (nodes and attributes)
 	 * @private
 	 */
 	#parseTargets(state,targetNodes){
@@ -495,8 +497,8 @@ export class pluginParse {
 	 * Reverts a parsed text node back to its original content.
 	 * Used during cleanup when the element is disconnected.
 	 *
-	 * @param {Object} state - The current parsing state.
-	 * @param {Text} node - The text node to revert.
+	 * @param {Object} state - The current parsing state
+	 * @param {Text} node - The text node to revert
 	 * @private
 	 */
 	#revertNodeParse(state,node){
@@ -518,8 +520,8 @@ export class pluginParse {
 	 * Reverts a parsed attribute back to its original value.
 	 * Used during cleanup when the element is disconnected.
 	 *
-	 * @param {Object} state - The current parsing state.
-	 * @param {string} name - The attribute name to revert.
+	 * @param {Object} state - The current parsing state
+	 * @param {string} name - The attribute name to revert
 	 * @private
 	 */
 	#revertAttribParse(state,name){
@@ -537,8 +539,8 @@ export class pluginParse {
 	 * Reverts a parsed binding back to its original content.
 	 * Used during cleanup when the element is disconnected.
 	 *
-	 * @param {Object} state - The current parsing state.
-	 * @param {HTMLElement} element - The element to revert.
+	 * @param {Object} state - The current parsing state
+	 * @param {HTMLElement} element - The element to revert
 	 * @private
 	 */
 	#revertBindParse(state,element){
@@ -557,16 +559,16 @@ export class pluginParse {
 	 * Executes an expression in the context of a node.
 	 * Creates a signal observer and wraps the run function for signal tracking.
 	 *
-	 * @param {HTMLElement} element - The root element for the expression context.
-	 * @param {Text} node - The text node to execute the expression in.
-	 * @param {string} exp - The expression to execute.
-	 * @param {Object} signalObs - The signal observer to wrap the run function.
-	 * @returns {Object} The execution result.
+	 * @param {HTMLElement} element - The root element for the expression context
+	 * @param {Text} node - The text node to execute the expression in
+	 * @param {string} exp - The expression to execute
+	 * @param {Object} signalObs - The signal observer to wrap the run function
+	 * @returns {Object} The execution result
 	 * @private
 	 */
 	#executeExpression(element,node,exp,signalObs){
 		let eCtrl = this.instance.elementScopeCtrl(node);
-		let exec = this.instance.elementExecExp(eCtrl,exp,{ $node:node, $expression:exp, $parseRoot:element },{ silentHas:true, useReturn:true, run:false });
+		let exec = this.instance.elementExecExp(eCtrl,exp,{ __proto__:null, $node:node, $expression:exp, $parseRoot:element },{ silentHas:true, useReturn:true, run:false });
 		if(signalObs) exec.runFn = signalObs.wrapRecorder(exec.runFn);
 		return exec;
 	}
@@ -574,7 +576,7 @@ export class pluginParse {
 	/**
 	 * Executes the parsing logic for all identified text nodes, attributes, and bindings.
 	 *
-	 * @param {Object} state - The current parsing state.
+	 * @param {Object} state - The current parsing state
 	 * @private
 	 */
 	#runParseExpressions(state){
@@ -671,12 +673,12 @@ export class pluginParse {
 	/**
 	 * Updates the content of a text node with the result of an expression.
 	 *
-	 * @param {Text} node - The text node to update.
-	 * @param {*} result - The result of the expression execution.
-	 * @param {Object} obj - The parsing object for this node.
-	 * @param {Object} state - The current parsing state.
-	 * @param {number} updateIndex - The current update iteration index.
-	 * @param {Object} signalObs - The signal observer for tracking updates.
+	 * @param {Text} node - The text node to update
+	 * @param {*} result - The result of the expression execution
+	 * @param {Object} obj - The parsing object for this node
+	 * @param {Object} state - The current parsing state
+	 * @param {number} updateIndex - The current update iteration index
+	 * @param {Object} signalObs - The signal observer for tracking updates
 	 * @private
 	 */
 	#updateTextNode(node,result,obj,state,updateIndex,signalObs){
@@ -728,13 +730,13 @@ export class pluginParse {
 	/**
 	 * Updates an element's attribute with the result of an expression.
 	 *
-	 * @param {HTMLElement} element - The element to update.
-	 * @param {string} attribute - The attribute name.
-	 * @param {*} result - The result of the expression execution.
-	 * @param {Object} obj - The parsing object for this attribute.
-	 * @param {Object} state - The current parsing state.
-	 * @param {number} updateIndex - The current update iteration index.
-	 * @param {Object} signalObs - The signal observer for tracking updates.
+	 * @param {HTMLElement} element - The element to update
+	 * @param {string} attribute - The attribute name
+	 * @param {*} result - The result of the expression execution
+	 * @param {Object} obj - The parsing object for this attribute
+	 * @param {Object} state - The current parsing state
+	 * @param {number} updateIndex - The current update iteration index
+	 * @param {Object} signalObs - The signal observer for tracking updates
 	 * @private
 	 */
 	#updateAttribute(element,attribute,result,obj,state,updateIndex,signalObs){
@@ -758,14 +760,13 @@ export class pluginParse {
 	/**
 	 * Updates an element's content (innerHTML or textContent) based on a binding.
 	 *
-	 * @param {HTMLElement} element - The element to update.
-	 * @
-	 * @param {boolean} isHTML - If binding is for HTML content.
-	 * @param {*} result - The result of the expression execution.
-	 * @param {Object} obj - The parsing object for this binding.
-	 * @param {Object} state - The current parsing state.
-	 * @param {number} updateIndex - The current update iteration index.
-	 * @param {Object} signalObs - The signal observer for tracking updates.
+	 * @param {HTMLElement} element - The element to update
+	 * @param {boolean} isHTML - If binding is for HTML content
+	 * @param {*} result - The result of the expression execution
+	 * @param {Object} obj - The parsing object for this binding
+	 * @param {Object} state - The current parsing state
+	 * @param {number} updateIndex - The current update iteration index
+	 * @param {Object} signalObs - The signal observer for tracking updates
 	 * @private
 	 */
 	#updateBind(element,isHTML,result,obj,state,updateIndex,signalObs){
