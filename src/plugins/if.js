@@ -54,6 +54,9 @@ export class pluginIf {
 	 * @returns {string} The name of the plugin
 	*/
 	get name(){ return 'if'; }
+	static get name(){ return 'if'; }
+	
+	#eventMap; #stateMap;
 	
 	/**
 	 * @param {Object} ScopeDom - The ScopeDom class
@@ -63,8 +66,8 @@ export class pluginIf {
 		this.ScopeDom = ScopeDom;
 		this.instance = instance;
 		this.isElementLoaded = ScopeDom.isElementLoaded;
-		this.eventMap = new WeakMap(); // element, set (removeEvent cb)
-		this.stateMap = new WeakMap(); // element, state
+		this.#eventMap = new WeakMap(); // element, set (removeEvent cb)
+		this.#stateMap = new WeakMap(); // element, state
 	}
 	
 	/**
@@ -84,18 +87,16 @@ export class pluginIf {
 		if(!element.isConnected) return;
 		// If it's a template and not loaded yet, defer connection until it is loaded.
 		if(element.nodeName==='TEMPLATE' && !isElementLoaded(element)){ instance.onElementLoaded(element,this.onConnect.bind(this,plugInfo)); return; }
-		let ifAttribNames = ['if','if else','if match','if case'];
-		let ifAttribs=new Map(), repeatAttrib, buildAttrib;
+		let ifAttributeNames = ['if','if else','if match','if case'];
+		let ifAttributes=new Map(), repeatAttribute;
 		if(attribs?.size>0) for(let [attribName,attrib] of attribs){
 			let { nameKey } = attrib;
-			if(ifAttribNames.indexOf(nameKey)!==-1) ifAttribs.set(nameKey,attrib);
-			else if(nameKey==='repeat') repeatAttrib = attrib;
-			else if(nameKey==='build') buildAttrib = attrib;
+			if(ifAttributeNames.indexOf(nameKey)!==-1) ifAttributes.set(nameKey,attrib);
+			else if(nameKey==='repeat') repeatAttribute = attrib;
 		}
-		if(ifAttribs.size===0) return;
-		if(repeatAttrib && element.nodeName==='TEMPLATE') this._moveAttrib(plugInfo,repeatAttrib,'default repeat');
-		if(buildAttrib && element.nodeName==='TEMPLATE') this._moveAttrib(plugInfo,buildAttrib,'default build');
-		this._setupIf(plugInfo,ifAttribs);
+		if(ifAttributes.size===0) return;
+		if(repeatAttribute && element.nodeName==='TEMPLATE') this.#moveAttrib(plugInfo,repeatAttribute,'default repeat');
+		this.#configureIf(plugInfo,ifAttributes);
 	}
 	
 	/**
@@ -107,10 +108,10 @@ export class pluginIf {
 	 * 
 	 * @param {Object} plugInfo - Contains `element` (template) and `attribs`
 	 * @param {Object} targetAttrib - Parsed ScopeDom repeat attribute of the element
-	 * @param {string} defaultAttribName - Fallback attrib name key, e.g. `'default repeat'`
+	 * @param {string} fallbackAttribName - Fallback attrib name key, e.g. `'default repeat'`
 	 * @private
 	 */
-	_moveAttrib(plugInfo,targetAttrib,defaultAttribName){
+	#moveAttrib(plugInfo,targetAttrib,fallbackAttribName){
 		let { element, attribs } = plugInfo;
 		if(targetAttrib.$pluginIfMoved) return;
 		targetAttrib.$pluginIfMoved = true;
@@ -128,8 +129,8 @@ export class pluginIf {
 			// Apply options to the new template element
 			if(opt.attribute && !opt.isDefault && opt.value!==null) this.ScopeDom.setAttribute(template,opt.attribute,opt.value);
 		}
-		if(attribs.has(defaultAttribName)){
-			let defaultRepeat = attribs.get(defaultAttribName);
+		if(attribs.has(fallbackAttribName)){
+			let defaultRepeat = attribs.get(fallbackAttribName);
 			if(defaultRepeat.value!==null) this.ScopeDom.setAttribute(template,defaultRepeat.attribute,defaultRepeat.value);
 			for(let [n,opt] of defaultRepeat.options){
 				if(opt.attribute) element.removeAttribute(opt.attribute);
@@ -153,20 +154,20 @@ export class pluginIf {
 	onDisconnect(plugInfo,fakeDC=false){
 		let { element, elementScopeCtrl, attribs } = plugInfo;
 		// Get State
-		let state = this.stateMap.get(element);
+		let state = this.#stateMap.get(element);
 		if(!state) return;
-		let removeState=true, removeEvents=true;
+		let shouldRemoveState=true, shouldRemoveEvents=true;
 		let { signalObs, isOnlyMatch, anchor, defaultDisplay, isTemplate, tplAnchorStart, tplAnchorEnd } = state;
 		let anchorDC = (element===anchor || element===tplAnchorStart || element===tplAnchorEnd);
 		if(anchorDC) element = state.element;
-		let ranOnce = this._hasRanOnce(state);
+		let hasExecuted = this.#hasExecutedOnce(state);
 		if(!isOnlyMatch && !isTemplate){
 			// Anchor disconnect
-			if(!ranOnce && anchorDC && element.isConnected) return;
+			if(!hasExecuted && anchorDC && element.isConnected) return;
 			// DOM mode: only anchor is connected, keep state & events
-			if(!ranOnce && !element.isConnected && anchor && anchor.isConnected) return;
+			if(!hasExecuted && !element.isConnected && anchor && anchor.isConnected) return;
 			// DOM & Style mode: ran only once
-			if(ranOnce){
+			if(hasExecuted){
 				if(anchor && anchor.$pluginIfElement){
 					anchor.data = ' (Removed)'+anchor.data;
 					anchor.$pluginIfElement = null;
@@ -200,22 +201,22 @@ export class pluginIf {
 			state.tplNodes = state.tplAnchorStart = state.tplAnchorEnd = state.tplDefaultDisplay = null;
 		}
 		// Skip rest if main element is connected
-		if(element.isConnected) removeState = removeEvents = false;
+		if(element.isConnected) shouldRemoveState = shouldRemoveEvents = false;
 		// Remove State
-		if(removeState){
-			if(this.stateMap.has(element)) this.stateMap.delete(element);
-			if(anchor && this.stateMap.has(anchor)) this.stateMap.delete(anchor);
-			if(tplAnchorStart && this.stateMap.has(tplAnchorStart)) this.stateMap.delete(tplAnchorStart);
-			if(tplAnchorEnd && this.stateMap.has(tplAnchorEnd)) this.stateMap.delete(tplAnchorEnd);
+		if(shouldRemoveState){
+			if(this.#stateMap.has(element)) this.#stateMap.delete(element);
+			if(anchor && this.#stateMap.has(anchor)) this.#stateMap.delete(anchor);
+			if(tplAnchorStart && this.#stateMap.has(tplAnchorStart)) this.#stateMap.delete(tplAnchorStart);
+			if(tplAnchorEnd && this.#stateMap.has(tplAnchorEnd)) this.#stateMap.delete(tplAnchorEnd);
 		}
 		// Remove event listeners - for element
-		if(removeEvents && this.eventMap.has(element)){
-			let set = this.eventMap.get(element);
+		if(shouldRemoveEvents && this.#eventMap.has(element)){
+			let set = this.#eventMap.get(element);
 			for(let removeEvent of set) removeEvent();
-			this.eventMap.delete(element);
+			this.#eventMap.delete(element);
 		}
 		// Cleanup signalObserver
-		if(removeEvents && signalObs){ signalObs.clear(); state.signalObs=null; }
+		if(shouldRemoveEvents && signalObs){ signalObs.clear(); state.signalObs=null; }
 	}
 	
 	/**
@@ -227,30 +228,30 @@ export class pluginIf {
 	 * 3. Creates a state object containing signal controllers, anchor references, and execution functions.
 	 *
 	 * @param {Object} plugInfo - Contains `element` and `elementScopeCtrl`
-	 * @param {Map<string, Object>} ifAttribs - Parsed ScopeDom if attributes of the element
+	 * @param {Map<string, Object>} ifAttributes - Parsed ScopeDom if attributes of the element
 	 * @private
 	 */
-	_setupIf(plugInfo,ifAttribs){
+	#configureIf(plugInfo,ifAttributes){
 		let { instance } = this;
 		let { element, elementScopeCtrl } = plugInfo;
 		let isTemplate = (element.nodeName==='TEMPLATE');
 		// Skip when existing state
-		if(this.stateMap.has(element)) return;
+		if(this.#stateMap.has(element)) return;
 		// Skip empty template
 		if(isTemplate && !(element.content?.childNodes?.length>0)) return console.warn("pluginIf: template has no content");
 		// Value / Expression
-		let exp = null, expAttrib = null;
-		for(let [nameKey,attrib] of ifAttribs){
+		let expression = null, expressionAttrib = null;
+		for(let [nameKey,attrib] of ifAttributes){
 			if(nameKey==='if' || nameKey==='if else' || nameKey==='if case'){
-				if(attrib.value?.length>0){ exp = attrib.value; expAttrib = attrib; }
-				if(expAttrib===null) expAttrib = attrib;
+				if(attrib.value?.length>0){ expression = attrib.value; expressionAttrib = attrib; }
+				if(expressionAttrib===null) expressionAttrib = attrib;
 			}
 		}
-		for(let [nameKey,attrib] of ifAttribs){
+		for(let [nameKey,attrib] of ifAttributes){
 			if(nameKey==='if' || nameKey==='if else' || nameKey==='if case'){
-				if(exp===null && !(attrib.value?.length>0)){
+				if(expression===null && !(attrib.value?.length>0)){
 					let value = attrib.value = instance.elementAttribFallbackOptionValue(attrib,['once','dom']);
-					if(value?.length>0){ exp = value; expAttrib = attrib; }
+					if(value?.length>0){ expression = value; expressionAttrib = attrib; }
 				}
 			}
 			if(nameKey==='if match'){
@@ -259,7 +260,7 @@ export class pluginIf {
 		}
 		// Options
 		let attribOpts = new Map(), matchOpts = new Map();
-		for(let [nameKey,attrib] of ifAttribs){
+		for(let [nameKey,attrib] of ifAttributes){
 			if(nameKey==='if' || nameKey==='if else' || nameKey==='if case'){
 				let options = instance.elementAttribOptionsWithDefaults(element,attrib);
 				if(options.size>0) attribOpts = new Map([...attribOpts,...options]);
@@ -269,41 +270,41 @@ export class pluginIf {
 			}
 		}
 		// Attrib Values
-		let ifValue = ifAttribs.has('if') ? ifAttribs.get('if').value : false,
-		ifElseValue = ifAttribs.has('if else') ? ifAttribs.get('if else').value : false,
-		ifMatchValue = ifAttribs.has('if match') ? ifAttribs.get('if match').value : false,
-		ifCaseValue = ifAttribs.has('if case') ? ifAttribs.get('if case').value : false;
-		let isOnlyMatch = ((ifMatchValue?.length>0 || ifMatchValue===null) && !expAttrib);
+		let ifAttributeValue = ifAttributes.has('if') ? ifAttributes.get('if').value : false,
+		ifElseAttributeValue = ifAttributes.has('if else') ? ifAttributes.get('if else').value : false,
+		ifMatchAttributeValue = ifAttributes.has('if match') ? ifAttributes.get('if match').value : false,
+		ifCaseAttributeValue = ifAttributes.has('if case') ? ifAttributes.get('if case').value : false;
+		let isOnlyMatchMode = ((ifMatchAttributeValue?.length>0 || ifMatchAttributeValue===null) && !expressionAttrib);
 		// Options
-		let onlyOnce = instance.elementAttribParseOption(element,attribOpts,'once',{ default:false, emptyTrue:true, runExp:true }); // $if:once
-		let domRemove = instance.elementAttribParseOption(element,attribOpts,'dom',{ default:false, emptyTrue:true, runExp:true }); // $if:dom or  $if:dom='exp' - same as $if='exp' $if:dom
+		let onlyOnceOption = instance.elementAttribParseOption(element,attribOpts,'once',{ default:false, emptyTrue:true, runExp:true }); // $if:once
+		let domRemoveOption = instance.elementAttribParseOption(element,attribOpts,'dom',{ default:false, emptyTrue:true, runExp:true }); // $if:dom or  $if:dom='exp' - same as $if='exp' $if:dom
 		let updateEvent = instance.elementAttribParseOption(element,attribOpts,'update scope',{ default:'$update', emptyTrue:false, runExp:true }).value; // $if:update-scope='event', $emit('event')
 		let updateDomEvent = instance.elementAttribParseOption(element,attribOpts,'update dom',{ default:'$update', emptyTrue:false, runExp:true }).value; // $if:update-dom='event', $emitDom('event')
 		let onShowEvent = instance.elementAttribParseOption(element,attribOpts,'on show',{ default:null, emptyTrue:false, runExp:false }).value; // $if:on-show='exp'
 		let onHideEvent = instance.elementAttribParseOption(element,attribOpts,'on hide',{ default:null, emptyTrue:false, runExp:false }).value; // $if:on-hide='exp'
 		let defaultValue = instance.elementAttribParseOption(element,attribOpts,'default',{ default:false, emptyTrue:false, runExp:true }).value; // $if:default='true' (eg, promise)
 		// State
-		onlyOnce=(onlyOnce.value===true); domRemove=(domRemove.value===true); //domOnce=(domOnce.value===true);
+		onlyOnceOption=(onlyOnceOption.value===true); domRemoveOption=(domRemoveOption.value===true);
 		let state = { __proto__:null,
 			signalCtrl: elementScopeCtrl.ctrl.signalCtrl, signalObs:null,
-			element, isOnlyMatch, ifValue, ifElseValue, ifMatchValue, ifCaseValue, matchOpts, depList:null,
-			options:{ __proto__:null, onlyOnce, domRemove, onShowEvent, onHideEvent, defaultValue },
+			element, isOnlyMatchMode, ifAttributeValue, ifElseAttributeValue, ifMatchAttributeValue, ifCaseAttributeValue, matchOpts, depList:null,
+			options:{ __proto__:null, onlyOnceOption, domRemoveOption, onShowEvent, onHideEvent, defaultValue },
 			showing:null, exec:null, execMatch:null, anchor:null, defaultDisplay:null, onShowExec:null, onHideExec:null, updateIndex:0,
 			isTemplate, tplNodes:null, tplAnchorStart:null, tplAnchorEnd:null, tplDefaultDisplay:null,
 		};
-		if(!this.stateMap.has(element)) this.stateMap.set(element,state);
+		if(!this.#stateMap.has(element)) this.#stateMap.set(element,state);
 		// Skip if only if-match (after state is set)
-		if(isOnlyMatch) return;
+		if(isOnlyMatchMode) return;
 		// Trigger Exec
-		let triggerExec = this._runIfExpressions.bind(this,plugInfo,expAttrib,state,exp);
+		let triggerExec = this.#runIfExpressions.bind(this,plugInfo,expressionAttrib,state,expression);
 		// Add $if() to element & element context
 		elementScopeCtrl.execContext.$if = element.$if = triggerExec;
 		// Register Events that trigger if-expression when they occur
-		if(updateEvent?.length>0) this._registerEvent(element,elementScopeCtrl.ctrl.$on(updateEvent,triggerExec,{ __proto__:null, capture:false, passive:true },true));
-		if(updateDomEvent?.length>0) this._registerEvent(element,elementScopeCtrl.$onDom(updateDomEvent,triggerExec,{ __proto__:null, capture:true, passive:true },true));
+		if(updateEvent?.length>0) this.#registerEventRemoval(element,elementScopeCtrl.ctrl.$on(updateEvent,triggerExec,{ __proto__:null, capture:false, passive:true },true));
+		if(updateDomEvent?.length>0) this.#registerEventRemoval(element,elementScopeCtrl.$onDom(updateDomEvent,triggerExec,{ __proto__:null, capture:true, passive:true },true));
 		// Continue when ready
 		instance.onReady(function onReadyPluginIf(){
-			this._runIfExpressions(plugInfo,expAttrib,state,exp);
+			this.#runIfExpressions(plugInfo,expressionAttrib,state,expression);
 		}.bind(this),false);
 	}
 	
@@ -314,9 +315,9 @@ export class pluginIf {
 	 * @param {Function} removeEvent - The function to remove the event listener
 	 * @private
 	 */
-	_registerEvent(element,removeEvent){
-		if(!this.eventMap.has(element)) this.eventMap.set(element,new Set());
-		this.eventMap.get(element).add(removeEvent);
+	#registerEventRemoval(element,removeEvent){
+		if(!this.#eventMap.has(element)) this.#eventMap.set(element,new Set());
+		this.#eventMap.get(element).add(removeEvent);
 	}
 	
 	/**
@@ -327,7 +328,7 @@ export class pluginIf {
 	 * @returns {boolean} True if the expression has been executed at least once; false otherwise.
 	 * @private
 	 */
-	_hasRanOnce(state){
+	#hasExecutedOnce(state){
 		let { exec, anchor, defaultDisplay, options:{ onlyOnce, domRemove } } = state;
 		return (onlyOnce && exec);
 	}
@@ -337,16 +338,16 @@ export class pluginIf {
 	 * Creates a signal observer and wraps the run function for signal tracking.
 	 *
 	 * @param {HTMLElement} element - The root element for the expression context
-	 * @param {string} exp - The expression to execute
+	 * @param {string} expression - The expression to execute
 	 * @param {boolean} useReturn - Return a value from `runFn()`
-	 * @param {Object|null} extra - Extra properties spread into the exec object
+	 * @param {Object|null} extraProps - Extra properties spread into the exec object
 	 * @param {Object} signalObs - The signal observer to wrap the run function
 	 * @returns {Object} The execution result
 	 * @private
 	 */
-	_execExpression(plugInfo,exp,useReturn=true,extra=null,signalObs=null){
-		if(!(exp?.length>0)) return null;
-		let exec = this.instance.elementExecExp(plugInfo.elementScopeCtrl,exp,{ __proto__:null, $expression:exp, ...extra },{ silentHas:true, useReturn, run:false });
+	#executeExpression(element,expression,useReturn=true,extraProps=null,signalObs){
+		let eCtrl = this.instance.elementScopeCtrl(element);
+		let exec = this.instance.elementExecExp(eCtrl,expression,{ __proto__:null, $expression:expression, ...extraProps },{ silentHas:true, useReturn, run:false });
 		if(signalObs) exec.runFn = signalObs.wrapRecorder(exec.runFn);
 		return exec;
 	}
@@ -358,38 +359,38 @@ export class pluginIf {
 	 * 1. Builds a dependency list (`depList`) of sibling elements with related if-state when handling empty `if-else` or `if-case`.
 	 * 2. Sets up signal observers for re-evaluation on change (via RAF scheduling).
 	 * 3. Prepares "on show" / "on hide" callback executors.
-	 * 4. Executes the main expression and delegates to `_handleResult()`.
+	 * 4. Executes the main expression and delegates to `#handleResult()`.
 	 * 
 	 * @param {Object} plugInfo - Contains `element`, `elementScopeCtrl`, and `attribs`
 	 * @param {Object} attrib - The attribute descriptor for this element (used in result handling)
 	 * @param {Object} state - Current conditional rendering state
-	 * @param {string|null} exp - Expression string to evaluate, or null if none was provided
-	 * @param {boolean} runMatch - Perform match-case evaluation logic (default: true)
-	 * @param {boolean} updateOthers - Propagate updates to dependent sibling elements (default: false)
+	 * @param {string|null} expression - Expression string to evaluate, or null if none was provided
+	 * @param {boolean} performMatch - Perform match-case evaluation logic (default: true)
+	 * @param {boolean} updateDependents - Propagate updates to dependent sibling elements (default: false)
 	 * @private
 	 */
-	_runIfExpressions(plugInfo,attrib,state,exp,runMatch=true,updateOthers=false){
+	#runIfExpressions(plugInfo,attrib,state,expression,performMatch=true,updateDependents=false){
 		let { instance, isElementLoaded } = this;
 		let { element, elementScopeCtrl, attribs } = plugInfo;
-		let { signalObs, ifValue, ifElseValue, ifMatchValue, ifCaseValue, options, depList, showing:wasShowing, exec, anchor, updateIndex, isTemplate } = state;
+		let { signalObs, ifAttributeValue, ifElseAttributeValue, ifMatchAttributeValue, ifCaseAttributeValue, options, depList, showing:wasShowing, exec, anchor, updateIndex, isTemplate } = state;
 		let { onShowEvent, onHideEvent } = options;
-		if(!this.stateMap.has(element)) return;
-		if(this._hasRanOnce(state)) return;
-		runMatch = runMatch!==false;
+		if(!this.#stateMap.has(element)) return;
+		if(this.#hasExecutedOnce(state)) return;
+		performMatch = performMatch!==false;
 		let result = null;
 		// Specified or Empty if-else or if-case
-		if(ifElseValue?.length>0 || ifElseValue===null || ifCaseValue?.length>0 || ifCaseValue===null){
+		if(ifElseAttributeValue?.length>0 || ifElseAttributeValue===null || ifCaseAttributeValue?.length>0 || ifCaseAttributeValue===null){
 			if(!depList){
 				depList = new Set();
 				// Build list of dependant if states
 				for(let e=element.previousSibling; e; e=e.previousSibling){
-					let isEl=e instanceof Element, eState=this.stateMap.get(e);
+					let isEl=e instanceof Element, eState=this.#stateMap.get(e);
 					if(!eState && !isEl) continue;
 					if(!eState && isEl) break;
 					if(eState){
-						if(eState.ifElseValue===null || eState.ifCaseValue===null) break; // Empty if-else or if-case
+						if(eState.ifElseAttributeValue===null || eState.ifCaseAttributeValue===null) break; // Empty if-else or if-case
 						depList.add(eState);
-						if(eState.ifValue?.length>0 || eState.ifMatchValue?.length>0) break; // Specified if or if-match
+						if(eState.ifAttributeValue?.length>0 || eState.ifMatchAttributeValue?.length>0) break; // Specified if or if-match
 						if(e===eState.tplAnchorEnd) e = eState.tplAnchorStart;
 					}
 				}
@@ -397,7 +398,7 @@ export class pluginIf {
 			}
 			// Check if states
 			for(let s of depList) if(s.exec && s.showing){ result=false; break; }
-			if((ifElseValue===null || ifCaseValue===null) && result===null){ result = true; } // Empty if-else or if-case
+			if((ifElseAttributeValue===null || ifCaseAttributeValue===null) && result===null){ result = true; } // Empty if-else or if-case
 		}
 		// Setup signalObserver
 		if(!signalObs){
@@ -407,21 +408,21 @@ export class pluginIf {
 				self.ScopeDom.animFrameHelper.onceRAF(state,signalObs,function pluginIf_signalObserver_RAF(){
 					if(state.updateIndex!==updateIndex) return;
 					signalObs.clearSignals();
-					self._runIfExpressions(plugInfo,attrib,state,exp,runMatch,true);
+					self.#runIfExpressions(plugInfo,attrib,state,expression,performMatch,true);
 				});
 			});
 		}
 		// Build Exec for On Show / On Hide - no signalObserver for these
-		if(onShowEvent?.length>0 && !state.onShowExec) state.onShowExec = this._execExpression(plugInfo,onShowEvent,false);
-		if(onHideEvent?.length>0 && !state.onHideExec) state.onHideExec = this._execExpression(plugInfo,onHideEvent,false);
+		if(onShowEvent?.length>0 && !state.onShowExec) state.onShowExec = this.#executeExpression(element,onShowEvent,false);
+		if(onHideEvent?.length>0 && !state.onHideExec) state.onHideExec = this.#executeExpression(element,onHideEvent,false);
 		// Build / Run Expression
 		if(result===null){
 			let execExtra = null;
-			if(exp?.length>0 && ifCaseValue?.length>0 && ifCaseValue===exp) execExtra = matchCaseScope;
-			if(!exec) exec = state.exec = this._execExpression(plugInfo,exp,true,execExtra,signalObs);
+			if(expression?.length>0 && ifCaseAttributeValue?.length>0 && ifCaseAttributeValue===expression) execExtra = matchCaseScope;
+			if(!exec) exec = state.exec = this.#executeExpression(element,expression,true,execExtra,signalObs);
 			result = element.$ifResult = exec.runFn();
 		}
-		this._handleResult(plugInfo,attrib,state,exp,updateIndex,runMatch,updateOthers,result);
+		this.#handleResult(plugInfo,attrib,state,expression,updateIndex,performMatch,updateDependents,result);
 	}
 	
 	/**
@@ -430,21 +431,21 @@ export class pluginIf {
 	 * This method handles:
 	 * 1. Signal resolution and promise handling (deferred processing via RAF).
 	 * 2. `if-match` / `if-case` match evaluation logic with recursive matching support.
-	 * 3. Promise-based expressions use a default value until resolved, then re-triggers `_handleResult`.
-	 * 4. Delegation to `_handleTemplateIfResult()` or `_handleRegularIfResult()` based on template mode.
+	 * 3. Promise-based expressions use a default value until resolved, then re-triggers `#handleResult`.
+	 * 4. Delegation to `#handleTemplateIfResult()` or `#handleRegularIfResult()` based on template mode.
 	 * 
 	 * @param {Object} plugInfo - Contains element and scope control info
 	 * @param {Object} attrib - Attribute descriptor for this element (used in result handling)
 	 * @param {Object} state - Current conditional rendering state
-	 * @param {string|null} exp - Expression string to evaluate, or null if none was provided
+	 * @param {string|null} expression - Expression string to evaluate, or null if none was provided
 	 * @param {number} updateIndex - The current update index; older results are ignored if a newer one exists
-	 * @param {boolean} runMatch - Match-case evaluation logic should be performed (default: true)
-	 * @param {boolean} updateOthers - Dependent sibling elements should also receive updates (default: false)
+	 * @param {boolean} performMatch - Match-case evaluation logic should be performed (default: true)
+	 * @param {boolean} updateDependents - Dependent sibling elements should also receive updates (default: false)
 	 * @param {*} result - The evaluated expression result to process
 	 * @private
 	 */
-	_handleResult(plugInfo,attrib,state,exp,updateIndex,runMatch,updateOthers,result){
-		let { signalObs, ifValue, ifElseValue, ifMatchValue, ifCaseValue, isTemplate, execMatch, options:{ matchOnce, defaultValue } } = state;
+	#handleResult(plugInfo,attrib,state,expression,updateIndex,performMatch,updateDependents,result){
+		let { signalObs, ifAttributeValue, ifElseAttributeValue, ifMatchAttributeValue, ifCaseAttributeValue, isTemplate, execMatch, options:{ matchOnce, defaultValue } } = state;
 		// Ignore old results
 		if(state.updateIndex>updateIndex) return;
 		// Resolve Signal
@@ -452,23 +453,23 @@ export class pluginIf {
 		// If result is promise, use default & handleResult when settled
 		if(result instanceof Promise){
 			// Fallback / Default Value
-			this._handleResult(plugInfo,attrib,state,exp,updateIndex,runMatch,false,defaultValue);
+			this.#handleResult(plugInfo,attrib,state,expression,updateIndex,performMatch,false,defaultValue);
 			updateIndex = state.updateIndex;
 			// Handle Result
-			this.ScopeDom.animFrameHelper.promiseToRAF(result,this._handleResult.bind(this,plugInfo,attrib,state,exp,updateIndex,false,true));
+			this.ScopeDom.animFrameHelper.promiseToRAF(result,this.#handleResult.bind(this,plugInfo,attrib,state,expression,updateIndex,false,true));
 			return;
 		}
 		// If the match result is a promise that contains a resolved value, ensure updates are propagated to other dependent elements
-		if(!updateOthers && execMatch?.result instanceof Promise && Object.hasOwn(execMatch.result,matchCasePromiseResultSymbol)) updateOthers = true;
-		// if updateOthers, check depList
-		if(updateOthers && state.depList) for(let eState of state.depList) if(eState.showing){ result=false; ifElseValue=false; ifCaseValue=false; break; }
+		if(!updateDependents && execMatch?.result instanceof Promise && Object.hasOwn(execMatch.result,matchCasePromiseResultSymbol)) updateDependents = true;
+		// if updateDependents, check depList
+		if(updateDependents && state.depList) for(let eState of state.depList) if(eState.showing){ result=false; ifElseAttributeValue=false; ifCaseAttributeValue=false; break; }
 		// Handle if-match & if-case
-		if(ifCaseValue?.length>0 && ifCaseValue===exp){
+		if(ifCaseAttributeValue?.length>0 && ifCaseAttributeValue===expression){
 			let ifMatch = null, matchElement = state.element, matchResult = null, matchOpts = new Map();
 			if(!execMatch && state.depList) for(let eState of [state,...state.depList]){
 				if(!execMatch && eState.execMatch) execMatch = state.execMatch = eState.execMatch;
-				if(eState.ifMatchValue?.length>0){
-					ifMatch = eState.ifMatchValue;
+				if(eState.ifMatchAttributeValue?.length>0){
+					ifMatch = eState.ifMatchAttributeValue;
 					matchElement = eState.element;
 					if(state.matchOpts.size>0) matchOpts = new Map([...matchOpts,...state.matchOpts]);
 				}
@@ -489,8 +490,8 @@ export class pluginIf {
 			if(execMatch.result instanceof Promise && Object.hasOwn(execMatch.result,matchCasePromiseResultSymbol)) matchResult = execMatch.result[matchCasePromiseResultSymbol];
 			if(execMatch.result instanceof Promise && execMatch.result?.[matchCasePromiseWaitSymbol]) matchResult = defaultValue;
 			// Run if needed
-			else if(firstRun || (runMatch!==false && !matchOnce)){
-				// console.log({ firstRun, runMatch, matchOnce });
+			else if(firstRun || (performMatch!==false && !matchOnce)){
+				// console.log({ firstRun, performMatch, matchOnce });
 				matchResult = execMatch.result = execMatch.runFn();
 				// Resolve Signal
 				execMatch.result = this.ScopeDom.resolveSignal(execMatch.result,signalObs);
@@ -503,25 +504,25 @@ export class pluginIf {
 					this.ScopeDom.animFrameHelper.promiseToRAF(execMatch.result,(pResult)=>{
 						execMatch.result[matchCasePromiseWaitSymbol] = false;
 						execMatch.result[matchCasePromiseResultSymbol] = pResult;
-						this._runIfExpressions(plugInfo,attrib,state,exp,false);
+						this.#runIfExpressions(plugInfo,attrib,state,expression,false);
 					});
 				}
 			}
 			// Check Match Case
 			if(result!==false){
 				let obsRecording = signalObs && signalObs.startRecording();
-				result = this._matchCase(matchResult,result,signalObs);
+				result = this.#matchCase(matchResult,result,signalObs);
 				if(obsRecording) signalObs.stopRecording();
 			}
 		}
 		// Continue with result
-		if(isTemplate) this._handleTemplateIfResult(plugInfo,attrib,state,exp,updateIndex,result);
-		else this._handleRegularIfResult(plugInfo,attrib,state,exp,updateIndex,result);
-		// if updateOthers, update remaining if elements
-		if(updateOthers && !(ifElseValue===null || ifCaseValue===null)){
+		if(isTemplate) this.#handleTemplateIfResult(plugInfo,attrib,state,expression,updateIndex,result);
+		else this.#handleRegularIfResult(plugInfo,attrib,state,expression,updateIndex,result);
+		// if updateDependents, update remaining if elements
+		if(updateDependents && !(ifElseAttributeValue===null || ifCaseAttributeValue===null)){
 			let anyShowing = !!state.showing;
 			for(let e=state.element.nextSibling; e; e=e.nextSibling){
-				let isEl=e instanceof Element, eState=this.stateMap.get(e);
+				let isEl=e instanceof Element, eState=this.#stateMap.get(e);
 				if(!eState && !isEl) continue;
 				if(!eState && isEl) break;
 				if(eState){
@@ -547,64 +548,64 @@ export class pluginIf {
 	 * 
 	 * On error, a warning is logged and `false` is returned.
 	 * 
-	 * @param {*} matchObj - The value to be matched (usually the evaluated expression result)
-	 * @param {*} caseObj - The pattern/object against which `matchObj` is compared
+	 * @param {*} matchValue - The value to be matched (usually the evaluated expression result)
+	 * @param {*} caseValue - The pattern/object against which `matchObj` is compared
 	 * @returns {boolean} True if successful match occurred; otherwise, returns false
 	 * @private
 	 */
-	_matchCase(matchObj,caseObj){
+	#matchCase(matchValue,caseValue){
 		try{
 			// Resolve Signals
-			matchObj = this.ScopeDom.resolveSignal(matchObj);
-			caseObj = this.ScopeDom.resolveSignal(caseObj);
+			matchValue = this.ScopeDom.resolveSignal(matchValue);
+			caseValue = this.ScopeDom.resolveSignal(caseValue);
 			// Equals
-			if(matchObj===caseObj) return true;
-			if(typeof caseObj==='string' || typeof caseObj==='number' || typeof caseObj==='boolean') return false;
-			if(caseObj===void 0 || caseObj===null || caseObj instanceof Error) return false;
-			if(matchObj instanceof Promise || caseObj instanceof Promise) return false;
+			if(matchValue===caseValue) return true;
+			if(typeof caseValue==='string' || typeof caseValue==='number' || typeof caseValue==='boolean') return false;
+			if(caseValue===void 0 || caseValue===null || caseValue instanceof Error) return false;
+			if(matchValue instanceof Promise || caseValue instanceof Promise) return false;
 			// Regex
-			if(caseObj instanceof RegExp && typeof matchObj==='string') return caseObj.test(matchObj);
+			if(caseValue instanceof RegExp && typeof matchValue==='string') return caseValue.test(matchValue);
 			// Special Function
-			if(caseObj instanceof Function && Object.hasOwn(caseObj,matchCaseOperatorSymbol)){
-				let operator = caseObj[matchCaseOperatorSymbol];
-				let arr = caseObj(matchObj), result = false;
-				if(operator==='or'){ result=false; for(let v of arr) if(this._matchCase(matchObj,v)) return true; }
-				else if(operator==='and'){ result=true; for(let v of arr) if(!this._matchCase(matchObj,v)) return false; }
-				else if(operator==='not'){ result=true; for(let v of arr) if(this._matchCase(matchObj,v)) return false; }
+			if(caseValue instanceof Function && Object.hasOwn(caseValue,matchCaseOperatorSymbol)){
+				let operator = caseValue[matchCaseOperatorSymbol];
+				let arr = caseValue(matchValue), result = false;
+				if(operator==='or'){ result=false; for(let v of arr) if(this.#matchCase(matchValue,v)) return true; }
+				else if(operator==='and'){ result=true; for(let v of arr) if(!this.#matchCase(matchValue,v)) return false; }
+				else if(operator==='not'){ result=true; for(let v of arr) if(this.#matchCase(matchValue,v)) return false; }
 				return result;
 			}
 			// Function
-			if(caseObj instanceof Function) return !!caseObj(matchObj);
+			if(caseValue instanceof Function) return !!caseValue(matchValue);
 			// Map
-			if(matchObj instanceof Map || matchObj instanceof WeakMap){
-				if(!(caseObj instanceof Map) && typeof caseObj==='object' && caseObj!==null){
-					if(Symbol.iterator in caseObj) return false;
-					caseObj = new Map(Object.entries(Object(caseObj)));
+			if(matchValue instanceof Map || matchValue instanceof WeakMap){
+				if(!(caseValue instanceof Map) && typeof caseValue==='object' && caseValue!==null){
+					if(Symbol.iterator in caseValue) return false;
+					caseValue = new Map(Object.entries(Object(caseValue)));
 				}
-				if(caseObj instanceof Map){
-					for(let [key,value] of caseObj) if(!matchObj.has(key) || !this._matchCase(matchObj.get(key),value)) return false;
+				if(caseValue instanceof Map){
+					for(let [key,value] of caseValue) if(!matchValue.has(key) || !this.#matchCase(matchValue.get(key),value)) return false;
 					return true;
 				}
 			}
 			// Array / Iterable
-			let isMatchArray = matchObj instanceof Array, isMatchIterable = !isMatchArray && (typeof matchObj==='object' && matchObj!==null && Symbol.iterator in matchObj);
-			let isCaseArray = caseObj instanceof Array, isCaseIterable = !isCaseArray && (typeof caseObj==='object' && caseObj!==null && Symbol.iterator in caseObj);
+			let isMatchArray = matchValue instanceof Array, isMatchIterable = !isMatchArray && (typeof matchValue==='object' && matchValue!==null && Symbol.iterator in matchValue);
+			let isCaseArray = caseValue instanceof Array, isCaseIterable = !isCaseArray && (typeof caseValue==='object' && caseValue!==null && Symbol.iterator in caseValue);
 			if((isMatchArray || isMatchIterable) && (isCaseArray || isCaseIterable)){
-				if(!isMatchArray && isMatchIterable) matchObj = Array.from(matchObj);
-				if(!isCaseArray && isCaseIterable) caseObj = Array.from(caseObj);
-				for(let i=0, cl=caseObj.length, ml=matchObj.length; i<cl; i++){
+				if(!isMatchArray && isMatchIterable) matchValue = Array.from(matchValue);
+				if(!isCaseArray && isCaseIterable) caseValue = Array.from(caseValue);
+				for(let i=0, cl=caseValue.length, ml=matchValue.length; i<cl; i++){
 					if(i>=ml) return false;
-					if(!this._matchCase(matchObj[i],caseObj[i])) return false;
+					if(!this.#matchCase(matchValue[i],caseValue[i])) return false;
 				}
 				return true;
 			}
 			// Object
-			if(typeof matchObj==='object' && typeof caseObj==='object' && matchObj!==null && caseObj!==null){
-				matchObj = Object(matchObj); caseObj = Object(caseObj);
-				for(let key of Object.keys(caseObj)) if(!Object.hasOwn(matchObj,key) || !this._matchCase(matchObj[key],caseObj[key])) return false;
+			if(typeof matchValue==='object' && typeof caseValue==='object' && matchValue!==null && caseValue!==null){
+				matchValue = Object(matchValue); caseValue = Object(caseValue);
+				for(let key of Object.keys(caseValue)) if(!Object.hasOwn(matchValue,key) || !this.#matchCase(matchValue[key],caseValue[key])) return false;
 				return true;
 			}
-		}catch(err){ console.warn('pluginIf: matchCase error:',caseObj,`\n`,err); }
+		}catch(err){ console.warn('pluginIf: matchCase error:',caseValue,`\n`,err); }
 		return false;
 	}
 	
@@ -619,12 +620,12 @@ export class pluginIf {
 	 * @param {Object} plugInfo - Contains `element`
 	 * @param {Object} attrib - Attribute descriptor for this element (used in result handling)
 	 * @param {Object} state - Current conditional rendering state
-	 * @param {string|null} exp - Expression string to evaluate, or null if none was provided
+	 * @param {string|null} expression - Expression string to evaluate, or null if none was provided
 	 * @param {number} callUpdateIndex - The update index at which this handler was called (older calls are ignored)
 	 * @param {boolean} nowShowing - Element should currently be shown (`true`) or hidden (`false`)
 	 * @private
 	 */
-	_handleRegularIfResult(plugInfo,attrib,state,exp,callUpdateIndex,nowShowing){
+	#handleRegularIfResult(plugInfo,attrib,state,expression,callUpdateIndex,nowShowing){
 		let { instance, isElementLoaded } = this;
 		let { element } = plugInfo;
 		let { attribute } = attrib;
@@ -637,10 +638,10 @@ export class pluginIf {
 		state.showing = nowShowing = !!nowShowing;
 		element.$ifResult = nowShowing;
 		// Has result changed
-		let differentResult = (wasShowing===null || wasShowing!==nowShowing);
+		let resultChanged = (wasShowing===null || wasShowing!==nowShowing);
 		// While element isn't loaded, fallback to style.display
 		if(domRemove && !nowShowing && !isElementLoaded(element)){
-			instance.onElementLoaded(element,this._runIfExpressions.bind(this,plugInfo,attrib,state,exp));
+			instance.onElementLoaded(element,this.#runIfExpressions.bind(this,plugInfo,attrib,state,expression));
 			domRemove = false;
 		}
 		// Remove/Restore DOM
@@ -651,11 +652,11 @@ export class pluginIf {
 				state.anchor = anchor = document.createComment(' If-Anchor: '+element.cloneNode(false).outerHTML+' ');
 			}
 			if(anchor && !nowShowing){
-				this.stateMap.set(anchor,state);
+				this.#stateMap.set(anchor,state);
 				this.instance.cacheConnectedNodes.add(anchor);
 			}
 			// Show
-			if(differentResult && nowShowing){
+			if(resultChanged && nowShowing){
 				if(anchor.isConnected){
 					instance.elementScopeSetAlias(element,anchor);
 					anchor.replaceWith(element);
@@ -663,7 +664,7 @@ export class pluginIf {
 				if(onShowExec) onShowExec.runFn();
 			}
 			// Hide
-			if(differentResult && !nowShowing){
+			if(resultChanged && !nowShowing){
 				if(!anchor.$pluginIfElement) anchor.$pluginIfElement = element;
 				if(element.isConnected){
 					instance.elementScopeSetAlias(anchor,element);
@@ -675,11 +676,11 @@ export class pluginIf {
 		// Change style.display
 		else {
 			if(defaultDisplay===null) state.defaultDisplay = defaultDisplay = element.style.display||'';
-			if(differentResult && nowShowing){
+			if(resultChanged && nowShowing){
 				element.style.display = defaultDisplay;
 				if(onShowExec) onShowExec.runFn();
 			}
-			if(differentResult && !nowShowing){
+			if(resultChanged && !nowShowing){
 				element.style.setProperty('display','none','important');
 				if(onHideExec) onHideExec.runFn();
 			}
@@ -700,12 +701,12 @@ export class pluginIf {
 	 * @param {Object} plugInfo - The plugInfo object containing `element`
 	 * @param {Object} attrib - Attribute descriptor for this element (used in result handling)
 	 * @param {Object} state - Current conditional rendering state
-	 * @param {string|null} exp - Expression string to evaluate, or null if none was provided
+	 * @param {string|null} expression - Expression string to evaluate, or null if none was provided
 	 * @param {number} callUpdateIndex - The update index at which this handler was called (older calls are ignored)
 	 * @param {boolean} nowShowing - Template content should currently be shown (`true`) or hidden (`false`)
 	 * @private
 	 */
-	_handleTemplateIfResult(plugInfo,attrib,state,exp,callUpdateIndex,nowShowing){
+	#handleTemplateIfResult(plugInfo,attrib,state,expression,callUpdateIndex,nowShowing){
 		let { instance, isElementLoaded } = this;
 		let { element } = plugInfo;
 		let { attribute } = attrib;
@@ -719,17 +720,17 @@ export class pluginIf {
 		state.showing = nowShowing = !!nowShowing;
 		element.$ifResult = nowShowing;
 		// Has result changed
-		let actionResult = (wasShowing===null || wasShowing!==nowShowing);
+		let resultChanged = (wasShowing===null || wasShowing!==nowShowing);
 		// Don't run while element isn't loaded
-		if(!isElementLoaded(element)){ instance.onElementLoaded(element,this._runIfExpressions.bind(this,plugInfo,attrib,state,exp)); return; }
+		if(!isElementLoaded(element)){ instance.onElementLoaded(element,this.#runIfExpressions.bind(this,plugInfo,attrib,state,expression)); return; }
 		// Create Anchors
 		if(!tplAnchorStart || !tplAnchorEnd){
-			tplAnchorStart = state.tplAnchorStart = state.tplAnchorStart||document.createComment(' If-Start-Anchor: '+element.nodeName+' '+attribute+' '+(exp?.length>0?exp+' ':''));
+			tplAnchorStart = state.tplAnchorStart = state.tplAnchorStart||document.createComment(' If-Start-Anchor: '+element.nodeName+' '+attribute+' '+(expression?.length>0?expression+' ':''));
 			tplAnchorEnd = state.tplAnchorEnd = state.tplAnchorEnd||document.createComment(' If-End-Anchor ');
 			state.anchor = tplAnchorEnd; // alias, but dont add to stateMap
-			this.stateMap.set(tplAnchorStart,state);
-			this.stateMap.set(tplAnchorEnd,state);
-			actionResult = true;
+			this.#stateMap.set(tplAnchorStart,state);
+			this.#stateMap.set(tplAnchorEnd,state);
+			resultChanged = true;
 		}
 		// Check if the anchors are still in the DOM; if not, they might have been moved or removed externally
 		if(tplAnchorStart.parentNode || tplAnchorEnd.parentNode){
@@ -739,7 +740,7 @@ export class pluginIf {
 			}
 			if(!correctDOM){
 				console.warn("pluginIf: DOM has been externally modified, correcting DOM structure",element);
-				actionResult = true;
+				resultChanged = true;
 				// Re-Insert Anchors
 				element.parentNode.insertBefore(tplAnchorEnd,element.nextSibling);
 				tplAnchorEnd.parentNode.insertBefore(tplAnchorStart,tplAnchorEnd);
@@ -753,7 +754,7 @@ export class pluginIf {
 		}
 		// When hiding, if there are direct text nodes, we must switch to 'dom' mode to ensure they are also hidden
 		let hasDirectTextNodes = false;
-		if((actionResult && !nowShowing) && tplAnchorStart.parentNode && tplAnchorEnd.parentNode){
+		if((resultChanged && !nowShowing) && tplAnchorStart.parentNode && tplAnchorEnd.parentNode){
 			let nodes = new Set();
 			for(let e=tplAnchorStart.nextSibling; e && e!==tplAnchorEnd; e=e.nextSibling){
 				if(!domRemove && e.nodeType===textNodeType) hasDirectTextNodes = true;
@@ -762,7 +763,7 @@ export class pluginIf {
 			tplNodes = state.tplNodes = nodes;
 		}
 		// When showing, if no nodes are saved, clone them from the template element
-		if((actionResult && nowShowing) && (!tplNodes || tplNodes.size===0)){
+		if((resultChanged && nowShowing) && (!tplNodes || tplNodes.size===0)){
 			if(!tplNodes) tplNodes = state.tplNodes = new Set();
 			for(let n of [...element.content.cloneNode(true).childNodes]){
 				tplNodes.add(n);
@@ -780,7 +781,7 @@ export class pluginIf {
 		// Remove/Insert DOM
 		if(domRemove){
 			// Hide
-			if(actionResult && !nowShowing){
+			if(resultChanged && !nowShowing){
 				// Remove Nodes
 				if(tplNodes?.size>0) for(let n of tplNodes) n.remove();
 				// Remove Anchors
@@ -790,7 +791,7 @@ export class pluginIf {
 				if(onHideExec) onHideExec.runFn();
 			}
 			// Show
-			if(actionResult && nowShowing){
+			if(resultChanged && nowShowing){
 				// Insert Anchors
 				element.parentNode.insertBefore(tplAnchorEnd,element.nextSibling);
 				tplAnchorEnd.parentNode.insertBefore(tplAnchorStart,tplAnchorEnd);
@@ -808,7 +809,7 @@ export class pluginIf {
 		// Hide/Show style display
 		if(!domRemove){
 			// Hide
-			if(actionResult && !nowShowing){
+			if(resultChanged && !nowShowing){
 				if(tplNodes?.size>0) for(let n of tplNodes){
 					if(!n.style) continue;
 					if(!tplDefaultDisplay.has(n)) tplDefaultDisplay.set(n,n.style.display||'');
@@ -817,7 +818,7 @@ export class pluginIf {
 				if(onHideExec) onHideExec.runFn();
 			}
 			// Show
-			if(actionResult && nowShowing){
+			if(resultChanged && nowShowing){
 				// If anchor isn't connected, insert anchors & nodes
 				if(!tplAnchorStart.parentNode){
 					// Insert Anchors
