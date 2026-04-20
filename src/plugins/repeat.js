@@ -2,6 +2,8 @@
 
 const symbRepeatElementScope = Symbol("pluginRepeatElementScope");
 
+const hasMoveBeforeSupport = 'moveBefore' in Element.prototype && typeof Element.prototype.moveBefore==="function";
+
 export class pluginRepeat {
 	get name(){ return 'repeat'; }
 	
@@ -42,9 +44,10 @@ export class pluginRepeat {
 		if(!state || !state.ready) return;
 		let { signalObs, anchorStart, anchorEnd, elementAnchor, mainTemplate } = state;
 		if((elementAnchor?.isConnected && !anchorStart && !anchorEnd) || (elementAnchor?.isConnected && anchorStart?.isConnected && anchorEnd?.isConnected)) return; // Eg, if moved
-		if(!elementAnchor?.isConnected || (anchorStart && !anchorStart?.isConnected) || (anchorEnd && !anchorEnd?.isConnected)) state.connected=false;
 		// Cleanup
-		if(!state.connected){
+		Promise.resolve().then(()=>{
+			if(!elementAnchor?.isConnected || (anchorStart && !anchorStart?.isConnected) || (anchorEnd && !anchorEnd?.isConnected)) state.connected=false;
+			if(state.connected) return;
 			// Remove event listeners - for elementAnchor
 			if(this.eventMap.has(elementAnchor)){
 				let set = this.eventMap.get(elementAnchor);
@@ -53,9 +56,6 @@ export class pluginRepeat {
 			}
 			// Cleanup signalObserver
 			if(signalObs){ signalObs.clear(); state.signalObs=null; }
-		}
-		Promise.resolve().then(()=>{
-			if(state.connected) return;
 			// Remove State
 			if(this.stateMap.has(mainTemplate)) this.stateMap.delete(mainTemplate);
 			if(this.stateMap.has(elementAnchor)) this.stateMap.delete(elementAnchor);
@@ -63,8 +63,8 @@ export class pluginRepeat {
 			if(this.stateMap.has(anchorEnd)) this.stateMap.delete(anchorEnd);
 			// Remove DOM Elements
 			let { domArr, anchorArr } = state;
-			if(anchorArr?.length>0) for(let i=0,l=anchorArr.length; i<l; i++)  anchorArr[i].parentNode?.removeChild(anchorArr[i]);
-			if(domArr?.length>0) for(let i=0,l=domArr.length; i<l; i++)  domArr[i].parentNode?.removeChild(domArr[i]);
+			if(anchorArr?.length>0) for(let i=0,l=anchorArr.length; i<l; i++) anchorArr[i].parentNode?.removeChild(anchorArr[i]);
+			if(domArr?.length>0) for(let i=0,l=domArr.length; i<l; i++) domArr[i].parentNode?.removeChild(domArr[i]);
 			// Cleanup
 			state.itemsArr = state.domArr = state.anchorArr = null;
 		});
@@ -127,7 +127,7 @@ export class pluginRepeat {
 		// <any $repeat:use="element">
 		if(useElement.attribOption){
 			let needsResolving = (useElement.execResult instanceof Error || useElement.value===null || (typeof useElement.value==="string" && useElement.value.length>0));
-			useElement = useElement.value;
+			useElement = this.ScopeDom.resolveSignal(useElement.value);
 			if(needsResolving){
 				if(typeof useElement==="string") useElement = element.ownerDocument.querySelector(useElement);
 				if(!(useElement instanceof Node) && !isElementLoaded(instance.mainElement)){
@@ -332,7 +332,7 @@ export class pluginRepeat {
 		else if(Object(execResult)===execResult){ itemsArr=Object.entries(execResult); }
 		else { execResult=[]; itemsArr=[]; isArr=true; }
 		// Find new items in old items
-		if(!oldItemsArr)oldItemsArr=[]; if(!oldDomArr)oldDomArr=[]; if(!oldAnchorArr)oldAnchorArr=[];
+		if(!oldItemsArr) oldItemsArr=[]; if(!oldDomArr) oldDomArr=[]; if(!oldAnchorArr) oldAnchorArr=[];
 		for(let i=0,l=itemsArr.length; i<l; i++){
 			let [key,item] = itemsArr[i];
 			let [oldKey,oldItem] = oldItemsArr[i]||[];
@@ -459,7 +459,6 @@ export class pluginRepeat {
 		let foundArr = [...foundDOM], fIndex=0, tmpFragment=document.createDocumentFragment();
 		for(let i=0,l=expectedArr.length; i<l; i++){
 			let expected = expectedArr[i];
-			expected = this.ScopeDom.resolveSignal(expected);
 			let found = foundArr[fIndex];
 			// If expected exists later, remove chunks of old DOM
 			if(found && found!==expected){
@@ -467,12 +466,16 @@ export class pluginRepeat {
 				if(foundAt>fIndex){
 					let oldFI = fIndex;
 					found = foundArr[fIndex=foundAt];
-					for(let j=oldFI; j<fIndex; j++) foundArr[j].parentNode?.removeChild(foundArr[j]);
+					for(let j=oldFI; j<fIndex; j++){
+						if(!hasMoveBeforeSupport || !expectedDOM.has(foundArr[j])){
+							foundArr[j].parentNode?.removeChild(foundArr[j]);
+						}
+					}
 				}
 			}
 			// Remove old dom
 			if(found && found!==expected){
-				found.parentNode?.removeChild(found);
+				if(!hasMoveBeforeSupport || !expectedDOM.has(found)) found.parentNode?.removeChild(found);
 				fIndex++;
 			}
 			// Insert expected dom
@@ -483,12 +486,28 @@ export class pluginRepeat {
 				}
 				fIndex++;
 			}
-			else tmpFragment.appendChild(expected);
+			else if(!hasMoveBeforeSupport || !expected.isConnected) tmpFragment.appendChild(expected);
 		}
 		// Remove remaining old dom
-		if(fIndex<foundArr.length) for(let i=fIndex,l=foundArr.length; i<l; i++) foundArr[i].parentNode?.removeChild(foundArr[i]);
+		if(fIndex<foundArr.length){
+			for(let i=fIndex,l=foundArr.length; i<l; i++){
+				if(!hasMoveBeforeSupport || !expectedDOM.has(foundArr[i])){
+					foundArr[i].parentNode?.removeChild(foundArr[i]);
+				}
+			}
+		}
 		// Insert remaining expected dom
 		if(tmpFragment.childNodes.length>0) anchorEnd.parentNode.insertBefore(tmpFragment,anchorEnd);
+		// Finalize element placement if using moveBefore
+		if(hasMoveBeforeSupport){
+			for(let i=expectedArr.length-1; i>=0; i--){
+				let expected = expectedArr[i], after = expectedArr[i+1] || anchorEnd;
+				if(expected.parentNode!==anchorEnd.parentNode || expected.nextSibling!==after){
+					if(!expected.isConnected) anchorEnd.parentNode.insertBefore(expected,after);
+					else anchorEnd.parentNode.moveBefore(expected,after);
+				}
+			}
+		}
 		// Update state
 		state.itemsArr=itemsArr; state.domArr=domArr; state.anchorArr=anchorArr;
 		element.$updated = elementAnchor.$updated = true;
