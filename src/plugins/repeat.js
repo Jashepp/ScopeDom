@@ -23,6 +23,9 @@ export class pluginRepeat {
 	 * @returns {string} The name of the plugin.
 	 */
 	get name(){ return 'repeat'; }
+	static get name(){ return 'repeat'; }
+	
+	#eventMap; #stateMap; #afterElementDC;
 	
 	/**
 	 * @param {Object} ScopeDom - The ScopeDom class.
@@ -32,9 +35,9 @@ export class pluginRepeat {
 		this.ScopeDom = ScopeDom;
 		this.instance = instance;
 		this.isElementLoaded = ScopeDom.isElementLoaded;
-		this.eventMap = new WeakMap(); // element, set (removeEvent cb)
-		this.stateMap = new WeakMap(); // element, state
-		this.afterElementDC = new WeakMap(); // element, cb
+		this.#eventMap = new WeakMap(); // element, set (removeEvent cb)
+		this.#stateMap = new WeakMap(); // element, state
+		this.#afterElementDC = new WeakMap(); // element, cb
 	}
 	
 	/**
@@ -48,15 +51,15 @@ export class pluginRepeat {
 	onConnect(plugInfo){
 		let { element, attribs } = plugInfo;
 		if(!element.isConnected) return;
-		let repeatAttrib, ifAttrib;
+		let repeatAttribute, ifAttrib;
 		if(attribs?.size>0) for(let [attribName,attrib] of attribs){
 			let { nameParts, nameKey, isDefault } = attrib;
-			if(nameKey==='repeat') repeatAttrib = attrib;
+			if(nameKey==='repeat') repeatAttribute = attrib;
 			if(nameKey==='if') ifAttrib = attrib;
 		}
-		if(repeatAttrib && ifAttrib) return; // pluginIf will move repeat into child template
-		if(repeatAttrib && this._setupRepeat(plugInfo,repeatAttrib)) return;
-		if(this.stateMap.has(element)) this._reSetupRepeat(element);
+		if(repeatAttribute && ifAttrib) return; // pluginIf will move repeat into child template
+		if(repeatAttribute && this.#configureRepeat(plugInfo,repeatAttribute)) return;
+		if(this.#stateMap.has(element)) this.#reconfigureRepeat(element);
 	}
 	
 	/**
@@ -69,14 +72,14 @@ export class pluginRepeat {
 	onDisconnect(plugInfo){
 		let { element } = plugInfo;
 		// Element Swap - If element is being swapped, defer cleanup
-		if(this.afterElementDC.has(element)){
-			let cb = this.afterElementDC.get(element);
-			this.afterElementDC.delete(element);
+		if(this.#afterElementDC.has(element)){
+			let cb = this.#afterElementDC.get(element);
+			this.#afterElementDC.delete(element);
 			Promise.resolve().then(cb);
 			return;
 		}
 		// Get State - Retrieve the repeat state for this element
-		let state = this.stateMap.get(element);
+		let state = this.#stateMap.get(element);
 		if(!state || !state.ready) return;
 		let { signalObs, anchorStart, anchorEnd, elementAnchor, mainTemplate } = state;
 		// Skip cleanup if anchors are already properly connected, or element anchor is disconnected without anchors
@@ -87,18 +90,18 @@ export class pluginRepeat {
 			if(!elementAnchor?.isConnected || (anchorStart && !anchorStart?.isConnected) || (anchorEnd && !anchorEnd?.isConnected)) state.connected=false;
 			if(state.connected) return;
 			// Remove event listeners - for elementAnchor
-			if(this.eventMap.has(elementAnchor)){
-				let set = this.eventMap.get(elementAnchor);
+			if(this.#eventMap.has(elementAnchor)){
+				let set = this.#eventMap.get(elementAnchor);
 				for(let removeEvent of set) removeEvent();
-				this.eventMap.delete(elementAnchor);
+				this.#eventMap.delete(elementAnchor);
 			}
 			// Cleanup signalObserver
 			if(signalObs){ signalObs.clear(); state.signalObs=null; }
 			// Remove State
-			if(this.stateMap.has(mainTemplate)) this.stateMap.delete(mainTemplate);
-			if(this.stateMap.has(elementAnchor)) this.stateMap.delete(elementAnchor);
-			if(this.stateMap.has(anchorStart)) this.stateMap.delete(anchorStart);
-			if(this.stateMap.has(anchorEnd)) this.stateMap.delete(anchorEnd);
+			if(this.#stateMap.has(mainTemplate)) this.#stateMap.delete(mainTemplate);
+			if(this.#stateMap.has(elementAnchor)) this.#stateMap.delete(elementAnchor);
+			if(this.#stateMap.has(anchorStart)) this.#stateMap.delete(anchorStart);
+			if(this.#stateMap.has(anchorEnd)) this.#stateMap.delete(anchorEnd);
 			// Remove DOM Elements
 			let { domArr, anchorArr } = state;
 			if(anchorArr?.length>0) for(let i=0,l=anchorArr.length; i<l; i++) anchorArr[i].parentNode?.removeChild(anchorArr[i]);
@@ -109,33 +112,33 @@ export class pluginRepeat {
 	}
 	
 	/**
-	 * Re-establishes repeat setup when anchors are reconnected.
+	 * Reconfigures repeat when anchors are reconnected.
 	 * Re-registers event listeners and triggers execution.
 	 * 
 	 * @param {HTMLElement} stateKey - The anchor element whose state needs re-setup
 	 * @private
 	 */
-	_reSetupRepeat(stateKey){
+	#reconfigureRepeat(stateKey){
 		let { instance } = this;
-		let state = this.stateMap.get(stateKey);
+		let state = this.#stateMap.get(stateKey);
 		if(!state) return;
-		let { options:{ updateEvent, updateDomEvent }, element, scopeCtrl, anchorStart, anchorEnd, elementAnchor, connected:wasConnected } = state;
+		let { options:{ updateScopeEventOption, updateDomEventOption }, element, scopeCtrl, anchorStart, anchorEnd, elementAnchor, connected:wasConnected } = state;
 		if(!state.ready) return;
 		let isConnected = anchorStart?.isConnected && anchorEnd?.isConnected && elementAnchor?.isConnected;
 		if(wasConnected && isConnected) return;
 		state.connected = isConnected;
 		if(!isConnected) return;
 		// Register Events
-		if(!this.eventMap.has(elementAnchor)){
-			if(updateEvent?.length>0) this._registerEvent(elementAnchor,scopeCtrl.ctrl.$on(updateEvent,state.triggerExec,{ __proto__:null, capture:false, passive:true },true));
-			if(updateDomEvent?.length>0) this._registerEvent(elementAnchor,scopeCtrl.$onDom(updateDomEvent,state.triggerExec,{ __proto__:null, capture:true, passive:true },true));
+		if(!this.#eventMap.has(elementAnchor)){
+			if(updateScopeEventOption?.length>0) this.#registerEventRemoval(elementAnchor,scopeCtrl.ctrl.$on(updateScopeEventOption,state.triggerExec,{ __proto__:null, capture:false, passive:true },true));
+			if(updateDomEventOption?.length>0) this.#registerEventRemoval(elementAnchor,scopeCtrl.$onDom(updateDomEventOption,state.triggerExec,{ __proto__:null, capture:true, passive:true },true));
 		}
 		// Run Expressions
 		state.triggerExec();
 	}
 	
 	/**
-	 * Sets up the repeat directive on an element.
+	 * Configures the repeat directive on an element.
 	 * 
 	 * This is the core method that handles template creation, anchor setup,
 	 * option parsing, and state initialization for the repeat functionality.
@@ -145,66 +148,66 @@ export class pluginRepeat {
 	 * @returns {boolean} true if setup is deferred (waiting for element to load)
 	 * @private
 	 */
-	_setupRepeat(plugInfo,attrib){
+	#configureRepeat(plugInfo,attrib){
 		let { ScopeDom, instance, isElementLoaded } = this;
 		let { element, elementScopeCtrl, attribs } = plugInfo;
 		let { isDefault, attribute, nameKey, nameParts, value } = attrib;
 		// Re-use State - If state already exists, re-setup instead
-		if(this.stateMap.has(element)) return this._reSetupRepeat(element);
+		if(this.#stateMap.has(element)) return this.#reconfigureRepeat(element);
 		// Need element to be fully loaded - Defer setup if element not ready
-		if(!isElementLoaded(element)){ instance.onElementLoaded(element,this._setupRepeat.bind(this,plugInfo,attrib)); return true; }
+		if(!isElementLoaded(element)){ instance.onElementLoaded(element,this.#configureRepeat.bind(this,plugInfo,attrib)); return true; }
 		// Fallback value if null
 		if(value===null) value = instance.elementAttribFallbackOptionValue(attrib,['once','node']);
 		// Options - Parse all repeat options
-		let attribOpts = instance.elementAttribOptionsWithDefaults(element,attrib);
-		let onlyOnce = instance.elementAttribParseOption(element,attribOpts,'once',{ default:false, emptyTrue:true, runExp:true }).value; // $repeat:once
-		let updateEvent = instance.elementAttribParseOption(element,attribOpts,'update scope',{ default:'$update', emptyTrue:false, runExp:true }).value; // $repeat:update-scope='event', $emit('event')
-		let updateDomEvent = instance.elementAttribParseOption(element,attribOpts,'update dom',{ default:'$update', emptyTrue:false, runExp:true }).value; // $repeat:update-dom='event', $emitDom('event')
-		let keyName = instance.elementAttribParseOption(element,attribOpts,'key',{ default:'$key', emptyTrue:false, runExp:false }).value; // $repeat:key="$key"
-		let itemName = instance.elementAttribParseOption(element,attribOpts,'item',{ default:'$item', emptyTrue:false, runExp:false }).value; // $repeat:item="$item"
-		let scopeName = instance.elementAttribParseOption(element,attribOpts,'scope',{ default:null, emptyTrue:false, runExp:false }).value; // $repeat:scope="$repeat1"
-		let useElement = instance.elementAttribParseOption(element,attribOpts,'use',{ default:null, emptyTrue:false, runExp:true });
-		let includeNode = instance.elementAttribParseOption(element,attribOpts,'node',{ default:false, emptyTrue:true, runExp:true }).value;
-		let onUpdateEvent = instance.elementAttribParseOption(element,attribOpts,'on update',{ default:null, emptyTrue:false, runExp:false }).value; // $repeat:on-update
-		let cacheList = instance.elementAttribParseOption(element,attribOpts,'cache',{ default:1, emptyTrue:false, runExp:true }).value;
-		cacheList = parseFloat(cacheList)*1000; if(cacheList+''==='NaN' || cacheList<0) cacheList = 0;
+		let attribOptions = instance.elementAttribOptionsWithDefaults(element,attrib);
+		let onlyOnceOption = instance.elementAttribParseOption(element,attribOptions,'once',{ default:false, emptyTrue:true, runExp:true }).value; // $repeat:once
+		let updateScopeEventOption = instance.elementAttribParseOption(element,attribOptions,'update scope',{ default:'$update', emptyTrue:false, runExp:true }).value; // $repeat:update-scope='event', $emit('event')
+		let updateDomEventOption = instance.elementAttribParseOption(element,attribOptions,'update dom',{ default:'$update', emptyTrue:false, runExp:true }).value; // $repeat:update-dom='event', $emitDom('event')
+		let keyNameOption = instance.elementAttribParseOption(element,attribOptions,'key',{ default:'$key', emptyTrue:false, runExp:false }).value; // $repeat:key="$key"
+		let itemNameOption = instance.elementAttribParseOption(element,attribOptions,'item',{ default:'$item', emptyTrue:false, runExp:false }).value; // $repeat:item="$item"
+		let scopeNameOption = instance.elementAttribParseOption(element,attribOptions,'scope',{ default:null, emptyTrue:false, runExp:false }).value; // $repeat:scope="$repeat1"
+		let useElementOption = instance.elementAttribParseOption(element,attribOptions,'use',{ default:null, emptyTrue:false, runExp:true });
+		let includeNodeOption = instance.elementAttribParseOption(element,attribOptions,'node',{ default:false, emptyTrue:true, runExp:true }).value;
+		let onUpdateEventOption = instance.elementAttribParseOption(element,attribOptions,'on update',{ default:null, emptyTrue:false, runExp:false }).value; // $repeat:on-update
+		let cacheListOption = instance.elementAttribParseOption(element,attribOptions,'cache',{ default:1, emptyTrue:false, runExp:true }).value;
+		cacheListOption = parseFloat(cacheListOption)*1000; if(cacheListOption+''==='NaN' || cacheListOption<0) cacheListOption = 0;
 		// New State
 		let mainTemplate, fromElement, fromElementAnchor, fromElementConnected, elementChildren, anchorStart, anchorEnd, createAnchorAfter, elementAnchor=element;
 		let state = { __proto__:null,
 			signalCtrl: elementScopeCtrl.ctrl.signalCtrl, signalObs:null,
-			options:{ __proto__:null, onlyOnce, keyName, itemName, scopeName, updateEvent, updateDomEvent, onUpdateEvent, cacheList },
+			options:{ __proto__:null, onlyOnceOption, keyNameOption, itemNameOption, scopeNameOption, updateScopeEventOption, updateDomEventOption, onUpdateEventOption, cacheListOption },
 			mainTemplate:null, anchorStart:null, anchorEnd:null, elementAnchor, element, scopeCtrl:elementScopeCtrl, domCache:new WeakMap(),
 			exec:null, connected:true, ready:false, itemsArr:null, domArr:null, anchorArr:null, triggerExec:null, onUpdateExec:null, updateIndex:0,
 		};
 		// Prepare the trigger execution function
-		let triggerExec = state.triggerExec = this._runExpressions.bind(this,plugInfo,state,value);
+		let triggerExec = state.triggerExec = this.#runExpressions.bind(this,plugInfo,state,value);
 		// Create end anchor comment
 		let commentEnd = document.createComment(' Repeat-End-Anchor: '+value+' ');
 		// <any $repeat:use="element"> Handle use attribute pointing to external element
-		if(useElement.attribOption){
-			let needsResolving = (useElement.execResult instanceof Error || useElement.value===null || (typeof useElement.value==="string" && useElement.value.length>0));
-			useElement = this.ScopeDom.resolveSignal(useElement.value);
+		if(useElementOption.attribOption){
+			let needsResolving = (useElementOption.execResult instanceof Error || useElementOption.value===null || (typeof useElementOption.value==="string" && useElementOption.value.length>0));
+			useElementOption = this.ScopeDom.resolveSignal(useElementOption.value);
 			// Handle string selector
 			if(needsResolving){
-				if(typeof useElement==="string") useElement = element.ownerDocument.querySelector(useElement);
+				if(typeof useElementOption==="string") useElementOption = element.ownerDocument.querySelector(useElementOption);
 				// Defer if main element not loaded
-				if(!(useElement instanceof Node) && !isElementLoaded(instance.mainElement)){
-					instance.onElementLoaded(instance.mainElement,this._setupRepeat.bind(this,plugInfo,attrib)); return true;
+				if(!(useElementOption instanceof Node) && !isElementLoaded(instance.mainElement)){
+					instance.onElementLoaded(instance.mainElement,this.#configureRepeat.bind(this,plugInfo,attrib)); return true;
 				}
 			}
-			if(!(useElement instanceof Node)) console.warn("pluginRepeat: repeat:use missing element,",element);
+			if(!(useElementOption instanceof Node)) console.warn("pluginRepeat: repeat:use missing element,",element);
 			// Defer if use element not loaded
-			if(useElement && !isElementLoaded(useElement)){
-				instance.onElementLoaded(useElement,this._setupRepeat.bind(this,plugInfo,attrib)); return true;
+			if(useElementOption && !isElementLoaded(useElementOption)){
+				instance.onElementLoaded(useElementOption,this.#configureRepeat.bind(this,plugInfo,attrib)); return true;
 			}
 			// Prevent self-referencing use element
-			if(useElement.nodeName!=='TEMPLATE') for(let e=useElement; e; e=e?.parentNode) if(e===element){ useElement=null; break; }
-			if(useElement){
-				if(useElement.nodeName==='TEMPLATE') mainTemplate = useElement;
+			if(useElementOption.nodeName!=='TEMPLATE') for(let e=useElementOption; e; e=e?.parentNode) if(e===element){ useElementOption=null; break; }
+			if(useElementOption){
+				if(useElementOption.nodeName==='TEMPLATE') mainTemplate = useElementOption;
 				else {
 					// Insert from-anchor and mark element for template creation
-					useElement.parentNode.insertBefore(fromElementAnchor=document.createComment(' Repeat-From-Anchor '),useElement);
-					fromElement = useElement;
+					useElementOption.parentNode.insertBefore(fromElementAnchor=document.createComment(' Repeat-From-Anchor '),useElementOption);
+					fromElement = useElementOption;
 				}
 				element.appendChild(anchorEnd=commentEnd);
 			}
@@ -220,12 +223,12 @@ export class pluginRepeat {
 			element.appendChild(anchorEnd=commentEnd);
 		}
 		// <any $repeat $repeat:node> Include node option
-		if(!mainTemplate && !fromElement && includeNode){
+		if(!mainTemplate && !fromElement && includeNodeOption){
 			fromElement = element;
 			createAnchorAfter = element;
 		}
 		// <any $repeat> Default case - clone children
-		if(!mainTemplate && !fromElement && !includeNode){
+		if(!mainTemplate && !fromElement && !includeNodeOption){
 			fromElement = element;
 			// Clone children to document fragment
 			elementChildren = document.createDocumentFragment();
@@ -244,7 +247,7 @@ export class pluginRepeat {
 		if(!mainTemplate && fromElement && !elementChildren){
 			fromElementConnected = fromElement.isConnected;
 			fromElement.remove();
-			if(!fromElementConnected) this._createTemplateFromElement(state,{ __proto__:null, fromElement, fromElementAnchor, includeNode, attribute, attribOpts });
+			if(!fromElementConnected) this.#createTemplateFromElement(state,{ __proto__:null, fromElement, fromElementAnchor, includeNodeOption, attribute, attribOptions });
 			mainTemplate = state.mainTemplate;
 		}
 		// Finalize State
@@ -252,13 +255,13 @@ export class pluginRepeat {
 		if(mainTemplate) state.mainTemplate = mainTemplate;
 		state.anchorStart = anchorStart;
 		state.anchorEnd = anchorEnd;
-		this.stateMap.set(anchorStart,state);
-		this.stateMap.set(anchorEnd,state);
+		this.#stateMap.set(anchorStart,state);
+		this.#stateMap.set(anchorEnd,state);
 		// Continue when ready
 		function finishSetupPluginRepeat(){
 			// Complete template setup if deferred
 			if(!mainTemplate && fromElement && fromElementConnected){
-				this._createTemplateFromElement(state,{ __proto__:null, fromElement, includeNode, fromElementAnchor, attribute, attribOpts });
+				this.#createTemplateFromElement(state,{ __proto__:null, fromElement, includeNodeOption, fromElementAnchor, attribute, attribOptions });
 				mainTemplate = state.mainTemplate;
 				if(!fromElement.isConnected) elementAnchor = state.elementAnchor = mainTemplate;
 			}
@@ -270,15 +273,15 @@ export class pluginRepeat {
 			}
 			// Additional Anchors
 			if(!elementAnchor?.isConnected && mainTemplate?.isConnected) elementAnchor = mainTemplate;
-			if(mainTemplate.parentNode===element) this.stateMap.set(mainTemplate,state);
+			if(mainTemplate.parentNode===element) this.#stateMap.set(mainTemplate,state);
 			// Fallback elementAnchor - Use anchorStart as fallback
-			if(useElement===mainTemplate || mainTemplate.parentNode!==anchorStart.parentNode) elementAnchor = anchorStart;
+			if(useElementOption===mainTemplate || mainTemplate.parentNode!==anchorStart.parentNode) elementAnchor = anchorStart;
 			// Set up scope aliasing
 			if(elementAnchor!==element) instance.elementScopeSetAlias(elementAnchor,element,true);
 			// Mark state as ready
 			state.ready = true;
 			state.elementAnchor = elementAnchor;
-			this.stateMap.set(elementAnchor,state);
+			this.#stateMap.set(elementAnchor,state);
 			state.scopeCtrl = instance.elementScopeCtrl(elementAnchor);
 			// Check Connected - Verify anchor connectivity
 			if(!anchorStart.isConnected || !anchorEnd.isConnected || !elementAnchor.isConnected){ state.connected=false; }
@@ -286,14 +289,14 @@ export class pluginRepeat {
 				// Add $repeat() to element & element context
 				state.scopeCtrl.execContext.$repeat = elementAnchor.$repeat = triggerExec;
 				// Register Events
-				if(updateEvent?.length>0) this._registerEvent(elementAnchor,state.scopeCtrl.ctrl.$on(updateEvent,triggerExec,{ __proto__:null, capture:false, passive:true },true));
-				if(updateDomEvent?.length>0) this._registerEvent(elementAnchor,state.scopeCtrl.$onDom(updateDomEvent,triggerExec,{ __proto__:null, capture:true, passive:true },true));
+				if(updateScopeEventOption?.length>0) this.#registerEventRemoval(elementAnchor,state.scopeCtrl.ctrl.$on(updateScopeEventOption,triggerExec,{ __proto__:null, capture:false, passive:true },true));
+				if(updateDomEventOption?.length>0) this.#registerEventRemoval(elementAnchor,state.scopeCtrl.$onDom(updateDomEventOption,triggerExec,{ __proto__:null, capture:true, passive:true },true));
 			}
 			// Execute initial expressions
-			this._runExpressions(plugInfo,state,value);
+			this.#runExpressions(plugInfo,state,value);
 		};
 		// Schedule setup completion
-		if(fromElement && fromElementConnected) this.afterElementDC.set(fromElement,finishSetupPluginRepeat.bind(this));
+		if(fromElement && fromElementConnected) this.#afterElementDC.set(fromElement,finishSetupPluginRepeat.bind(this));
 		else instance.onReady(finishSetupPluginRepeat.bind(this),false);
 		return true;
 	}
@@ -305,16 +308,16 @@ export class pluginRepeat {
 	 * @param {Object} state - The repeat state object
 	 * @param {Object} options - Template creation options
 	 * @param {HTMLElement} options.fromElement - The source element to clone
-	 * @param {boolean} options.includeNode - Include the node itself in the template
+	 * @param {boolean} options.includeNodeOption - Include the node itself in the template
 	 * @param {Comment} options.fromElementAnchor - The anchor comment to position the element
 	 * @param {Object} options.attribute - The repeat attribute object
-	 * @param {Map} options.attribOpts - Parsed attribute options
+	 * @param {Map} options.attribOptions - Parsed attribute options
 	 * @private
 	 */
-	_createTemplateFromElement(state,{ __proto__=null, fromElement, includeNode, fromElementAnchor=null, attribute, attribOpts }){
+	#createTemplateFromElement(state,{ __proto__=null, fromElement, includeNodeOption, fromElementAnchor=null, attribute, attribOptions }){
 		let { mainTemplate, anchorStart } = state;
 		if(mainTemplate || !fromElement) return;
-		this.stateMap.delete(fromElement);
+		this.#stateMap.delete(fromElement);
 		let newElement = fromElement.cloneNode(true);
 		if(fromElementAnchor){
 			fromElementAnchor.parentNode.insertBefore(fromElement,fromElementAnchor);
@@ -322,13 +325,13 @@ export class pluginRepeat {
 		}
 		anchorStart.parentNode.insertBefore(document.createComment(' Repeat-Use: '+(newElement.cloneNode(false).outerHTML||'Node: '+newElement.textContent)+' '),anchorStart);
 		mainTemplate = state.mainTemplate = document.createElement('template');
-		this.stateMap.set(mainTemplate,state);
-		if(includeNode) mainTemplate.content.appendChild(newElement);
+		this.#stateMap.set(mainTemplate,state);
+		if(includeNodeOption) mainTemplate.content.appendChild(newElement);
 		else for(let e of [...newElement.childNodes]) mainTemplate.content.appendChild(e);
-		if(includeNode){
+		if(includeNodeOption){
 			this.ScopeDom.setAttribute(mainTemplate,attribute,newElement.getAttribute(attribute)||'');
 			newElement.removeAttribute(attribute);
-			for(let [n,opt] of attribOpts) if(opt.attribute && !opt.isDefault){
+			for(let [n,opt] of attribOptions) if(opt.attribute && !opt.isDefault){
 				if(!mainTemplate.hasAttribute(opt.attribute)) this.ScopeDom.setAttribute(mainTemplate,opt.attribute,opt.value||'');
 				newElement.removeAttribute(opt.attribute);
 			}
@@ -348,9 +351,9 @@ export class pluginRepeat {
 	 * @param {Function} removeEvent - The event removal callback
 	 * @private
 	 */
-	_registerEvent(element,removeEvent){
-		if(!this.eventMap.has(element)) this.eventMap.set(element,new Set());
-		this.eventMap.get(element).add(removeEvent);
+	#registerEventRemoval(element,removeEvent){
+		if(!this.#eventMap.has(element)) this.#eventMap.set(element,new Set());
+		this.#eventMap.get(element).add(removeEvent);
 	}
 	
 	/**
@@ -365,7 +368,7 @@ export class pluginRepeat {
 	 * @returns {Object|null} The execution object or null if expression is empty
 	 * @private
 	 */
-	_execExpression(plugInfo,exp,useReturn=true,extra=null,signalObs=null){
+	#executeExpression(plugInfo,exp,useReturn=true,extra=null,signalObs=null){
 		if(!(exp?.length>0)) return null;
 		let exec = this.instance.elementExecExp(plugInfo.elementScopeCtrl,exp,{ __proto__:null, $expression:exp, ...extra },{ silentHas:true, useReturn, run:false });
 		if(signalObs) exec.runFn = signalObs.wrapRecorder(exec.runFn);
@@ -381,20 +384,20 @@ export class pluginRepeat {
 	 * @param {string} exp - The expression to execute
 	 * @private
 	 */
-	_runExpressions(plugInfo,state,exp){
+	#runExpressions(plugInfo,state,exp){
 		let { instance } = this;
 		let { signalObs, options, mainTemplate, elementAnchor, anchorStart, anchorEnd, exec, connected, ready, updateIndex } = state;
-		let { onlyOnce, onUpdateEvent } = options;
+		let { onlyOnceOption, onUpdateEventOption } = options;
 		// Early exit if not ready or not connected
 		if(!ready || !connected) return;
 		// Early exit if only-once mode
-		if(onlyOnce && exec) return;
+		if(onlyOnceOption && exec) return;
 		// Check that anchors are still in the same parent
 		if(anchorStart.parentNode!==anchorEnd.parentNode){ console.warn("pluginRepeat: Repeat Anchors have been modified, cannot run expressions.",{ mainTemplate, elementAnchor, anchorStart, anchorEnd, exp }); return; }
 		// Only run if anchors are connected
 		if(!anchorStart.isConnected || !anchorEnd.isConnected || !elementAnchor.isConnected) return;
 		// Build Exec for On Update - Prepare the on-update callback if configured
-		if(onUpdateEvent?.length>0 && !state.onUpdateExec) state.onUpdateExec = this._execExpression(plugInfo,onUpdateEvent,false,null);
+		if(onUpdateEventOption?.length>0 && !state.onUpdateExec) state.onUpdateExec = this.#executeExpression(plugInfo,onUpdateEventOption,false,null);
 		// Setup signalObserver - Re-trigger expressions when signals change
 		if(!signalObs){
 			let self=this; signalObs = state.signalObs = (signalObs || state.signalCtrl.createObserver());
@@ -404,23 +407,23 @@ export class pluginRepeat {
 					// Only run expressions if updateIndex is still the same
 					if(state.updateIndex!==updateIndex) return;
 					signalObs.clearSignals();
-					self._runExpressions(plugInfo,state,exp);
+					self.#runExpressions(plugInfo,state,exp);
 				});
 			});
 		}
 		// Get Items - Prepare the expression execution if not already done
-		if(!exec) state.exec = exec = this._execExpression(plugInfo,exp,true,null,signalObs);
+		if(!exec) state.exec = exec = this.#executeExpression(plugInfo,exp,true,null,signalObs);
 		let execResult = exec.runFn();
 		// Resolve any signal references in the result
 		execResult = this.ScopeDom.resolveSignal(execResult);
 		// Handle fallback when Promise on first update
 		if(state.itemsArr===null && execResult instanceof Promise){
-			this._handleRepeatDOM(plugInfo,state,updateIndex,[]);
+			this.#handleRepeatDOM(plugInfo,state,updateIndex,[]);
 			updateIndex = state.updateIndex;
 		}
 		// Handle Result - If Promise, defer DOM handling to when it resolves; otherwise handle immediately
-		if(execResult instanceof Promise) this.ScopeDom.animFrameHelper.promiseToRAF(execResult,this._handleRepeatDOM.bind(this,plugInfo,state,updateIndex));
-		else this._handleRepeatDOM(plugInfo,state,updateIndex,execResult);
+		if(execResult instanceof Promise) this.ScopeDom.animFrameHelper.promiseToRAF(execResult,this.#handleRepeatDOM.bind(this,plugInfo,state,updateIndex));
+		else this.#handleRepeatDOM(plugInfo,state,updateIndex,execResult);
 	}
 	
 	/**
@@ -438,11 +441,11 @@ export class pluginRepeat {
 	 * @param {*} execResult - The result to iterate over
 	 * @private
 	 */
-	_handleRepeatDOM(plugInfo,state,callUpdateIndex,execResult){
+	#handleRepeatDOM(plugInfo,state,callUpdateIndex,execResult){
 		let { instance } = this;
 		let { element } = plugInfo;
 		let { options, mainTemplate, elementAnchor, anchorStart, anchorEnd, itemsArr:oldItemsArr, domArr:oldDomArr, anchorArr:oldAnchorArr, domCache, updateIndex } = state;
-		let { keyName, itemName, scopeName, cacheList:cacheLimit } = options;
+		let { keyNameOption, itemNameOption, scopeNameOption, cacheListOption:cacheLimit } = options;
 		// Ignore old calls
 		if(updateIndex>callUpdateIndex) return;
 		state.updateIndex++;
@@ -555,8 +558,7 @@ export class pluginRepeat {
 			usedAnchors.add(anchor);
 			// Set Element Scopes - Build local element scope with iteration metadata
 			let [$prevKey,$prevItem] = itemsArr[i-1]||[], [$nextKey,$nextItem] = itemsArr[i+1]||[];
-			let scope = { __proto__:null, $index:i, $isFirst:i===0, $isLast:i===l-1, [keyName]:key, [itemName]:item, $prevKey, $prevItem, $nextKey, $nextItem };
-			// if(scopeName!==null && scopeName?.length>0) scope = { __proto__:null, [scopeName]:scope }; // $repeat:scope="$repeat1" // $repeat1.$item
+			let scope = { __proto__:null, $index:i, $isFirst:i===0, $isLast:i===l-1, [keyNameOption]:key, [itemNameOption]:item, $prevKey, $prevItem, $nextKey, $nextItem };
 			scope[symbRepeatElementScope] = elementAnchor;
 			anchor[symbRepeatElementScope] = elementAnchor;
 			// Apply scope to anchor element and alias scope on node elements
@@ -566,7 +568,7 @@ export class pluginRepeat {
 					let s = scopesArr[i];
 					if(s[symbRepeatElementScope]!==elementAnchor) continue;
 					if(e===anchor){
-						if(scope[scopeName] && s[scopeName]) Object.assign(s[scopeName],scope[scopeName]);
+						if(scope[scopeNameOption] && s[scopeNameOption]) Object.assign(s[scopeNameOption],scope[scopeNameOption]);
 						else Object.assign(s,scope); // Update existing scope, use assign, so references remain correct
 					}
 					else scopesArr[i] = anchor; // Alias to anchor's element scope
