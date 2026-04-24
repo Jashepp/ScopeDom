@@ -674,7 +674,7 @@ export class pluginParse {
 	 * Updates the content of a text node with the result of an expression.
 	 *
 	 * @param {Text} node - The text node to update
-	 * @param {*} result - The result of the expression execution
+	 * @param {any} result - The result of the expression execution
 	 * @param {Object} obj - The parsing object for this node
 	 * @param {Object} state - The current parsing state
 	 * @param {number} updateIndex - The current update iteration index
@@ -732,7 +732,7 @@ export class pluginParse {
 	 *
 	 * @param {HTMLElement} element - The element to update
 	 * @param {string} attribute - The attribute name
-	 * @param {*} result - The result of the expression execution
+	 * @param {any} result - The result of the expression execution
 	 * @param {Object} obj - The parsing object for this attribute
 	 * @param {Object} state - The current parsing state
 	 * @param {number} updateIndex - The current update iteration index
@@ -762,7 +762,7 @@ export class pluginParse {
 	 *
 	 * @param {HTMLElement} element - The element to update
 	 * @param {boolean} isHTML - If binding is for HTML content
-	 * @param {*} result - The result of the expression execution
+	 * @param {any} result - The result of the expression execution
 	 * @param {Object} obj - The parsing object for this binding
 	 * @param {Object} state - The current parsing state
 	 * @param {number} updateIndex - The current update iteration index

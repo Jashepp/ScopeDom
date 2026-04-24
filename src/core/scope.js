@@ -19,24 +19,29 @@ import ScopeDom from "../scopedom.js";
 
 /**
  * Wrapper/mixin class for scope instances.
+ * 
  * Provides $scopeTop and $scopeParent getters for scope hierarchy access.
+ * This class handles the prototype switching logic: if scopeObj is a plain Object,
+ * its prototype is changed to scopeBase; otherwise, this instance inherits from scopeObj.
+ * 
  * @class scopeInstance
  */
 export class scopeInstance {
+	
 	/**
 	 * @constructor
 	 * @param {object} scopeObj Base scope object
 	 * @param {scopeController} scopeCtrl Parent scopeController
-	 * @returns 
+	 * @returns Either scopeInstance or an object with a changed prototype
 	 */
 	constructor(scopeObj,scopeCtrl){
 		let mainObj = this;
-		// If scopeObj is a plain Object, change proto to scopeBase
+		// If scopeObj has object prototype, change it
 		if(getPrototypeOf(scopeObj)===objectProto){
 			Object.setPrototypeOf(scopeObj,new scopeBase());
 			mainObj = scopeObj;
 		}
-		// If scopeObj is something else, change this scopeInstance proto to the scopeObj
+		// Otherwise, change prototype to scopeObj, making this instance inherit
 		else Object.setPrototypeOf(this,scopeObj);
 		// Add methods
 		Object.defineProperties(mainObj,{
@@ -50,12 +55,17 @@ export class scopeInstance {
 
 /**
  * Base class for scope objects.
+ * 
  * Creates an object with null prototype and $scope self-reference getter.
+ * 
  * @class scopeBase
  */
 export class scopeBase {
 	/**
+	 * Creates an object with null prototype and a $scope self-reference getter that returns `this`.
+	 * 
 	 * @constructor
+	 * @returns {object} A new scope base object
 	 */
 	constructor(){ return Object.create(null,{
 		__proto__: { __proto__:null, value:null },
@@ -67,7 +77,9 @@ const scSymb = Symbol('$scopeControllerContext');
 
 /**
  * Expression context class for scope controller operations.
+ * 
  * Provides access to scope controller methods and properties in expressions.
+ * 
  * @class scopeControllerContext
  */
 export class scopeControllerContext {
@@ -79,6 +91,7 @@ export class scopeControllerContext {
 	
 	/**
 	 * Get the scopeInstance associated with this context.
+	 * 
 	 * @type {scopeInstance}
 	 */
 	get $scope(){ return this[scSymb].scope; };
@@ -87,7 +100,8 @@ export class scopeControllerContext {
 	 * Emit scope update event on the scope event registry.
 	 * 
 	 * If no suffix, then this is used to update all expressions, needed if signals/reactivity aren't enabled.
-	 * Plugins listen for this aswell as signals.
+	 * Plugins listen for this as well as signals.
+	 * 
 	 * @param {string} [suffix=''] Optional suffix for custom update events
 	 * @returns {boolean} Result of the event dispatch
 	 */
@@ -97,6 +111,7 @@ export class scopeControllerContext {
 	 * Remove an event listener from scope event registry.
 	 * 
 	 * If no arguments, all registered events will be removed from the scope event registry.
+	 * 
 	 * @param {string} [name=null] Event name to remove (all if null)
 	 * @param {Function} [listener=null] Event listener function to remove (if null, all with same name)
 	 * @param {object} [options=null] Event options to match (if null, all with same name & listener)
@@ -106,6 +121,7 @@ export class scopeControllerContext {
 	
 	/**
 	 * Add an event listener to scope event registry.
+	 * 
 	 * @param {string} name Event name
 	 * @param {Function} listener Event listener function
 	 * @param {object} [options={}] Event options (capture:true, passive:false)
@@ -116,6 +132,7 @@ export class scopeControllerContext {
 	
 	/**
 	 * Add a one-time event listener to scope event registry.
+	 * 
 	 * @param {string} name Event name
 	 * @param {Function} listener Event listener function
 	 * @param {object} [options={}] Event options (capture:true, passive:false, once:true)
@@ -126,6 +143,7 @@ export class scopeControllerContext {
 	
 	/**
 	 * Emit a custom event on the scope event registry.
+	 * 
 	 * @param {string} name Event name
 	 * @param {object} [detail=null] Event detail
 	 * @param {object} [options=null] Event options (detail, bubbles:false, cancelable:false, composed:true)
@@ -135,7 +153,9 @@ export class scopeControllerContext {
 	
 	/**
 	 * Emit a custom event on RAF (request animation frame) for the scope.
+	 * 
 	 * Deduplicates events by uniqueID to prevent multiple rapid emissions.
+	 * 
 	 * @param {string} name Event name
 	 * @param {object} [detail=null] Event detail
 	 * @param {object} [options=null] Event options
@@ -146,13 +166,16 @@ export class scopeControllerContext {
 	
 	/**
 	 * Request an animation frame callback.
+	 * 
 	 * @param {Function} cb Callback function to execute on next animation frame
 	 */
 	$onRAF(cb){ return animFrameHelper.requestAF(cb); };
 	
 	/**
 	 * Add a one-time animation frame callback.
+	 * 
 	 * Deduplicates callbacks by uniqueID to prevent multiple executions.
+	 * 
 	 * @param {Function} cb Callback function to execute on next animation frame
 	 * @param {string} [uniqueID] Unique ID for onceRAF deduplication
 	 */
@@ -162,6 +185,7 @@ export class scopeControllerContext {
 	 * Remove an event listener from an element/EventTarget.
 	 * 
 	 * If no name, listener & options, all registered events will be removed from the element/EventTarget.
+	 * 
 	 * @param {EventTarget} target Target element/EventTarget
 	 * @param {string} [name=null] Event name to remove (all if null)
 	 * @param {Function} [listener=null] Event listener function to remove (if null, all with same name)
@@ -172,6 +196,7 @@ export class scopeControllerContext {
 	
 	/**
 	 * Add an event listener to an element/EventTarget.
+	 * 
 	 * @param {EventTarget} target Target element/EventTarget
 	 * @param {string} name Event name
 	 * @param {Function} listener Event listener function
@@ -183,6 +208,7 @@ export class scopeControllerContext {
 	
 	/**
 	 * Add a one-time event listener to an element/EventTarget.
+	 * 
 	 * @param {EventTarget} target Target element/EventTarget
 	 * @param {string} name Event name
 	 * @param {Function} listener Event listener function
@@ -194,6 +220,7 @@ export class scopeControllerContext {
 	
 	/**
 	 * Emit a custom event on an element/EventTarget.
+	 * 
 	 * @param {EventTarget} target Target element/EventTarget
 	 * @param {string} name Event name
 	 * @param {object} [detail=null] Event detail
@@ -205,7 +232,6 @@ export class scopeControllerContext {
 	/**
 	 * Create a new signal instance & record it immediately to any recording signal observers.
 	 * 
-	 * This only returns the signalInstance.
 	 * @param {any} [value] Initial signal value
 	 * @returns {signalInstance} The created signal instance
 	 */
@@ -217,6 +243,7 @@ export class scopeControllerContext {
  * The Main Scope Controller.
  * 
  * This handles scope event registry, other controller references & etc.
+ * 
  * @class scopeController
  */
 export class scopeController {
@@ -252,7 +279,8 @@ export class scopeController {
 	 * Emit scope update event on the scope event registry.
 	 * 
 	 * If no suffix, then this is used to update all expressions, needed if signals/reactivity aren't enabled.
-	 * Plugins listen for this aswell as signals.
+	 * Plugins listen for this as well as signals.
+	 * 
 	 * @param {string} [suffix] Optional suffix for custom update events (not used by any core features)
 	 */
 	$emitScopeUpdate(suffix=''){
@@ -270,6 +298,7 @@ export class scopeController {
 	 * Remove an event listener from scope event registry.
 	 * 
 	 * If no arguments, all registered events will be removed from the scope event registry.
+	 * 
 	 * @param {string} [name=null] Event name
 	 * @param {Function} [listener=null] Event listener function
 	 * @param {object} [options=null] Event options
@@ -283,7 +312,8 @@ export class scopeController {
 	 * Remove an event listener from scope event registry.
 	 * 
 	 * If no arguments, all registered events will be removed from the scope event registry.
-	 * Alias of $removeEvent
+	 * Alias of $removeEvent.
+	 * 
 	 * @param {string} [name=null] Event name
 	 * @param {Function} [listener=null] Event listener function
 	 * @param {object} [options=null] Event options
@@ -295,6 +325,7 @@ export class scopeController {
 	
 	/**
 	 * Add an event listener to scope event registry.
+	 * 
 	 * @param {string} name Event name
 	 * @param {Function} listener Event listener function
 	 * @param {object} [options] Event options (capture:true, passive:false)
@@ -309,6 +340,7 @@ export class scopeController {
 	
 	/**
 	 * Add a one-time event listener to scope event registry.
+	 * 
 	 * @param {string} name Event name
 	 * @param {Function} listener Event listener function
 	 * @param {object} [options] Event options (capture:true, passive:false, once:true)
@@ -322,6 +354,7 @@ export class scopeController {
 	
 	/**
 	 * Emit a custom event on the scope event registry.
+	 * 
 	 * @param {string} name Event name
 	 * @param {object} [detail=null] Event detail
 	 * @param {object} [options=null] Event options (detail, bubbles:false, cancelable:false, composed:true)
@@ -336,6 +369,7 @@ export class scopeController {
 	 * Remove an event listener from an element/EventTarget.
 	 * 
 	 * If no name, listener & options, all registered events will be removed from the element/EventTarget.
+	 * 
 	 * @param {EventTarget} target Target element/EventTarget
 	 * @param {string} [name=null] Event name
 	 * @param {Function} [listener=null] Event listener function
@@ -348,6 +382,7 @@ export class scopeController {
 	
 	/**
 	 * Add an event listener to an element/EventTarget.
+	 * 
 	 * @param {EventTarget} target Target element/EventTarget
 	 * @param {string} name Event name
 	 * @param {Function} listener Event listener function
@@ -365,6 +400,7 @@ export class scopeController {
 	
 	/**
 	 * Add a one-time event listener to an element/EventTarget.
+	 * 
 	 * @param {EventTarget} target Target element/EventTarget
 	 * @param {string} name Event name
 	 * @param {Function} listener Event listener function
@@ -379,6 +415,7 @@ export class scopeController {
 	
 	/**
 	 * Emit a custom event on an element/EventTarget.
+	 * 
 	 * @param {EventTarget} target Target element/EventTarget
 	 * @param {string} name Event name
 	 * @param {object} [detail=null] Event detail
@@ -394,6 +431,7 @@ export class scopeController {
 	 * Create new signal instance & record it immediately to any recording signal observers.
 	 * 
 	 * This is similar to $createSignal, except it returns an array with [ getter, setter, signalInstance ].
+	 * 
 	 * @param {any} [value] Initial signal value
 	 * @returns {Array<Function,Function,signalInstance>} [ getter, setter, signalInstance ]
 	 */
@@ -403,6 +441,7 @@ export class scopeController {
 	 * Create a new signal instance & record it immediately to any recording signal observers.
 	 * 
 	 * This only returns the signalInstance.
+	 * 
 	 * @param {any} [value] Initial signal value
 	 * @param {boolean} [useWeakRef=false] Use weak references
 	 * @returns {signalInstance} The created signal instance
@@ -411,6 +450,7 @@ export class scopeController {
 	
 	/**
 	 * Define a signal on an object property (getter & setter).
+	 * 
 	 * @param {object} obj Object to define signal on
 	 * @param {string} prop Property name
 	 * @param {any} [value] Initial signal value
@@ -422,6 +462,7 @@ export class scopeController {
 	
 	/**
 	 * Assign signals from source to target object (getters & setters).
+	 * 
 	 * @param {object} target Target object to assign signals to
 	 * @param {object} source Source object to assign signals from
 	 * @returns {object} The target object with assigned signals
@@ -433,6 +474,7 @@ export class scopeController {
 	 * 
 	 * This returns an array with [ signal, observer, clear function ].
 	 * Call this clear() function during cleanup, otherwise the signalObserver will stick around.
+	 * 
 	 * @param {Function} fn Function to compute signal from
 	 * @param {object} [options] { pull:true } Options
 	 * @returns {[signalInstance,signalObserver,Function]} [ signal, observer, clear function ]
@@ -443,6 +485,7 @@ export class scopeController {
 	 * Create a signal proxy for an object.
 	 * 
 	 * All properties will be treated signals.
+	 * 
 	 * @param {any} value Object to proxy
 	 * @returns {Proxy} The created proxy
 	 */
@@ -450,6 +493,7 @@ export class scopeController {
 	
 	/**
 	 * Define a signal proxy on an object property.
+	 * 
 	 * @param {object} obj Object to define proxy signal on
 	 * @param {string} prop Property name
 	 * @param {any} value Object to proxy
@@ -462,6 +506,7 @@ export class scopeController {
 	 * 
 	 * This prevents all updates from signal changes during execution.
 	 * If this behaviour doesn't match what you need, try preventObservers or isolateRecording & wrapRecorder.
+	 * 
 	 * @param {Function} fn Function to execute.
 	 * @param {...*} [args] Additional arguments to pass to the function
 	 * @returns {any} Result of executed function
@@ -470,8 +515,10 @@ export class scopeController {
 	
 	/**
 	 * Prevent signal observers during function execution.
+	 * 
 	 * This prevents the recording of any signals during execution.
 	 * If this behaviour doesn't match what you need, try preventUpdates or isolateRecording & wrapRecorder.
+	 * 
 	 * @param {Function} fn Value to prevent observers for
 	 * @param {...*} [args] Additional arguments to pass to the function
 	 * @returns {any} Result of executed function
@@ -485,6 +532,13 @@ const seSymb = Symbol('$scopeElementContext');
 /**
  * Expression context class for scope element controller operations.
  * Provides access to scope element controller methods and properties in expressions.
+ * 
+ * This class exposes DOM-related capabilities including:
+ * - Element references ($this, $parent, $previous, $next)
+ * - Document access (document)
+ * - Query selectors ($(query), $$(query))
+ * - DOM event handling ($offDom, $onDom, $onceDom, $emitDom, $emitDomRAF)
+ * 
  * @class scopeElementContext
  */
 export class scopeElementContext {
@@ -497,30 +551,35 @@ export class scopeElementContext {
 	
 	/**
 	 * Get this element.
+	 * 
 	 * @type {HTMLElement}
 	 */
 	get $this(){ return this[seSymb].element; };
 	
 	/**
 	 * Get the parent element (or host if in Shadow DOM).
+	 * 
 	 * @type {HTMLElement}
 	 */
 	get $parent(){ return (this[seSymb].element.parentNode instanceof ShadowRoot && this[seSymb].element.parentNode.host) ? this[seSymb].element.parentNode.host : this[seSymb].element.parentNode; };
 	
 	/**
 	 * Get the previous sibling element.
+	 * 
 	 * @type {HTMLElement}
 	 */
 	get $previous(){ return this[seSymb].element.previousElementSibling; };
 	
 	/**
 	 * Get the next sibling element.
+	 * 
 	 * @type {HTMLElement}
 	 */
 	get $next(){ return this[seSymb].element.nextElementSibling; };
 	
 	/**
 	 * Get the document this element belongs to.
+	 * 
 	 * @type {Document}
 	 */
 	get document(){ return this[seSymb].element.ownerDocument; };
@@ -534,6 +593,7 @@ export class scopeElementContext {
 	
 	/**
 	 * Query selector on the element.
+	 * 
 	 * @param {string} query CSS selector
 	 * @returns {HTMLElement|null} The matched element
 	 */
@@ -541,6 +601,7 @@ export class scopeElementContext {
 	
 	/**
 	 * Remove a DOM event listener for this element.
+	 * 
 	 * @param {string} [name=null] Event name
 	 * @param {Function} [listener=null] Event listener function
 	 * @param {object} [options=null] Event options
@@ -550,6 +611,7 @@ export class scopeElementContext {
 	
 	/**
 	 * Add a DOM event listener for this element.
+	 * 
 	 * @param {string} name Event name
 	 * @param {Function} listener Event listener function
 	 * @param {object} [options] Event options (capture, passive, once)
@@ -560,6 +622,7 @@ export class scopeElementContext {
 	
 	/**
 	 * Add a one-time DOM event listener for this element.
+	 * 
 	 * @param {string} name Event name
 	 * @param {Function} listener Event listener function
 	 * @param {object} [options] Event options (capture, passive, once)
@@ -570,6 +633,7 @@ export class scopeElementContext {
 	
 	/**
 	 * Emit a DOM event for this element.
+	 * 
 	 * @param {string} name Event name
 	 * @param {object} [detail=null] Event detail
 	 * @param {object} [options=null] Event options (detail, bubbles, cancelable, composed)
@@ -579,10 +643,13 @@ export class scopeElementContext {
 	
 	/**
 	 * Emit a DOM event on RAF (request animation frame) for this element.
+	 * 
+	 * This uses animFrameHelper.onceRAF() to deduplicate events by uniqueID, preventing multiple rapid emissions.
+	 * 
 	 * @param {string} name Event name
 	 * @param {object} [detail=null] Event detail
 	 * @param {object} [options=null] Event options
-	 * @param {string} [uniqueID] Unique ID for onceRAF deduplication
+	 * @param {string} [uniqueID] Unique ID for onceRAF deduplication (default as $attribute or '$emitDomRAF:sec')
 	 */
 	$emitDomRAF(name,detail=null,options=null,uniqueID=this.$attribute||'$emitDomRAF:sec'){ return animFrameHelper.onceRAF(this[seSymb].element,uniqueID+':'+name,()=>this[seSymb].$emitDom(name,detail,options)); };
 	
@@ -615,30 +682,37 @@ export class scopeElementController {
 	
 	/**
 	 * Execute an expression on the element with a list of scopes for context.
+	 * 
+	 * This method walks up the controller hierarchy to collect mainScopes, then collects
+	 * additional scopes from extraScopes and elementScopes while avoiding duplicates.
+	 * Then it either runs the expression immediately (run=true) or builds it for later execution (run=false).
+	 * 
 	 * @param {string} expression The expression to execute
 	 * @param {Array<object>|null} [extraScopes=null] Extra scopes to include [{},...]
 	 * @param {Array<object>|null} [elementScopes=null] Element scopes to include [[element,scopesArr],...]
-	 * @param {execExp.execExpOptions|object|null} [fnOptions=null] Execution options
+	 * @param {execExp.execExpOptions|object|null} [fnOptions=null] Execution options (run:true/false)
 	 * @returns {any} execExpression result object
 	 */
 	execElementExpression(expression,extraScopes=null,elementScopes=null,fnOptions=null){
 		fnOptions = { __proto__:null, ...fnOptions, scopeCtrl:this.ctrl };
+		// Determine if element context should be included (unless hideDocument=true)
 		let elementContext = !fnOptions?.hideDocument ? this.execContext : null;
 		if(!hasOwn(fnOptions,'fnThis') && !fnOptions?.hideDocument) fnOptions.fnThis = this.element;
 		let instance = this.ctrl.ScopeDomInstance;
-		// Main controller scopes
+		// Walk up the controller hierarchy to collect mainScopes until isolated or null (primary scopes for expression evaluation)
 		let mainScopes = [];
 		for(let c=this.ctrl; c; c=c.parentCtrl){
 			mainScopes.push(c.scope);
 			if(c.isolated) break;
 		}
+		// Track which objects should use their own properties (not inherited)
 		let scopeUseOwn = new WeakSet();
-		// Proto list of mainScopes, to not be in otherScopes
+		// Track prototypes of main scopes so we can exclude them from otherScopes
 		let msProtoList = new Set();
 		for(let ms of mainScopes) for(let o=ms; o && scopeAllowed(o); o=getPrototypeOf(o)) msProtoList.add(o);
-		// Other scopes
+		// Track additional scopes, which gets passed into the expression builder as extraScopes
 		let otherScopes = new Set();
-		// Add extraScopes & it's prototypes
+		// Add extraScopes and their prototypes
 		if(extraScopes?.length>0){
 			for(let s of extraScopes) for(let o=s; o && scopeAllowed(o); o=getPrototypeOf(o)){
 				if(!msProtoList.has(o) && !otherScopes.has(o)){
@@ -656,7 +730,7 @@ export class scopeElementController {
 					scopeUseOwn.add(o);
 				}
 			}
-			// Add element controller scopes
+			// Add element controller scopes from the cached controllers for each element
 			let eScopeCtrl = instance?.cacheElementScopeCtrls.get(e);
 			if(eScopeCtrl){
 				for(let o=eScopeCtrl.scope; o && scopeAllowed(o); o=getPrototypeOf(o)){
@@ -667,26 +741,29 @@ export class scopeElementController {
 				}
 			}
 		}
-		// Add current element controller context
+		// Add current element controller context ($this, $$, etc.)
 		if(elementContext) otherScopes.add(elementContext);
-		// Add current scope controller context
+		// Add current scope controller context ($update, $on, $emit, $signal, etc.)
 		if(this.ctrl.execContext) otherScopes.add(this.ctrl.execContext);
-		// Run or build execExpression
+		// Prepare expression builder/execution options
 		fnOptions.scopeUseOwn = scopeUseOwn;
 		if(!('useSignalProxy' in fnOptions)) fnOptions.useSignalProxy = instance.options.signalProxyAll;
-		// Plugins onExpression
+		// Notify plugins via onElementExpression hook, to allow expression modifications
 		let expObj = { expression, mainScopes, otherScopes, options:fnOptions };
 		let expInfo = new ScopeDom.pluginOnElementExpression(instance,this.element,this,expObj);
 		instance.pluginsOnElementExpression(expInfo);
+		// If plugins modified the expression string, update it for builder/execution
 		if(expObj.expression!==expression) expression = expObj.expression;
-		// Execute or build expression
+		// Either run the expression immediately or build it for later execution (run:true/false)
 		if(fnOptions.run!==false) return execExpression.runExp(expression,mainScopes,otherScopes,fnOptions);
 		else return execExpression.buildExp(expression,mainScopes,otherScopes,fnOptions);
 	}
 	
 	/**
 	 * Emit DOM update event for this element.
+	 * 
 	 * Only called by plugins - not yet used.
+	 * 
 	 * @param {string} [suffix] Optional suffix for custom update events
 	 * @param {boolean} [emitSelf=false] emit event on own element+children, or only children
 	 */
@@ -706,7 +783,9 @@ export class scopeElementController {
 	
 	/**
 	 * Emit DOM update event to children.
+	 * 
 	 * Only called by plugins - not yet used.
+	 * 
 	 * @param {string} name Event name
 	 * @param {object} [detail=null] Event detail
 	 * @param {object} [options=null] Event options
@@ -723,6 +802,7 @@ export class scopeElementController {
 	
 	/**
 	 * Remove a registered DOM event listener for this element.
+	 * 
 	 * @param {string} [name=null] Event name
 	 * @param {Function} [listener=null] Event listener function
 	 * @param {object} [options=null] Event options
@@ -734,6 +814,7 @@ export class scopeElementController {
 	
 	/**
 	 * Add a DOM event listener for this element.
+	 * 
 	 * @param {string} name Event name
 	 * @param {Function} listener Event listener function
 	 * @param {object} [options] Event options (capture, passive, once)
@@ -746,6 +827,7 @@ export class scopeElementController {
 	
 	/**
 	 * Add a one-time DOM event listener for this element.
+	 * 
 	 * @param {string} name Event name
 	 * @param {Function} listener Event listener function
 	 * @param {object} [options] Event options (capture, passive, once)
@@ -758,6 +840,7 @@ export class scopeElementController {
 	
 	/**
 	 * Emit a DOM event for this element.
+	 * 
 	 * @param {string} name Event name
 	 * @param {object} [detail=null] Event detail
 	 * @param {object} [options=null] Event options (detail, bubbles, cancelable, composed)

@@ -438,7 +438,7 @@ export class pluginRepeat {
 	 * @param {Object} plugInfo - The plugin connection info
 	 * @param {Object} state - The repeat state object
 	 * @param {number} callUpdateIndex - The update index to ignore older calls
-	 * @param {*} execResult - The result to iterate over
+	 * @param {any} execResult - The result to iterate over
 	 * @private
 	 */
 	#handleRepeatDOM(plugInfo,state,callUpdateIndex,execResult){

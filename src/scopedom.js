@@ -18,6 +18,12 @@ import {
 	scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
 } from "./core/scope.js";
 
+/**
+ * Disables the document.defaultView property to prevent access.
+ *
+ * This function redefines document.defaultView to return a simplified object
+ * containing getComputedStyle. It also logs a console warning when accessed.
+ */
 const disableDocumentDefaultView = ()=>{
 	try{ defineProperty(window.document,'defaultView',{
 		get(){ return console.warn("ScopeDom: document.defaultView is disabled"), { __proto__:null, getComputedStyle:window.getComputedStyle.bind(window) }; }
@@ -25,103 +31,162 @@ const disableDocumentDefaultView = ()=>{
 	catch(e){ console.warn("ScopeDom: Failed to disable document.defaultView\n",e); }
 }
 
-/** @template {object} ScopeDomInitOptions */
+/**
+ * Default initialization options for ScopeDom.
+ * 
+ * @template {object} initOptionsDefaults
+ * @typedef {object} initOptionsDefaults
+ */
 const initOptionsDefaults = {
-	dev: true, // Verbose developer logging
+	/** @type {boolean} Verbose developer logging */
+	dev: true,
+	/** @type {boolean} Regex for parsing attribute names */
 	attribRegexMatch: /^\$((?:[\.\w\d]+)(?:\-[\.\w\d]+)*?)(?:\:((?:[\.\w\d]+)(?:\-[\.\w\d]+)*?))?$/, // group1: name, group2: option
+	/** @type {boolean} Regex for parsing attribute parts */
 	attribRegexParts: /([\.\w\d]+)/g,
+	/** @type {boolean} Ignore attribute name */
 	attribIgnore: '$ignore',
+	// attribFormatTest: '$aa-bb-cc', // test these (if they exist), if fail, throw
+	// attribOptionsFormatTest: '$aa-bb-cc:oa-ob',
+	/** @type {boolean} Enable global context */
 	globalContext: true,
+	/** @type {boolean} Enable document context */
 	documentContext: true,
+	/** @type {boolean} Disable document default view */
 	documentDefaultView: false,
-	/** @type {scopeBase|object|null} */
+	/** @type {scopeBase|object|null} Custom scope object */
 	scope: null,
+	/** @type {boolean} Attribute alias mappings */
 	attributeAliases: null,
+	/** @type {boolean} Attribute alias name key mappings */
 	attributeAliasNameKeys: null,
+	/** @type {boolean} Auto trigger ready callbacks */
 	autoReady: true,
-	/** @type {HTMLElement|null} */
+	/** @type {HTMLElement|null} Main Element (defaults to document.body) */
 	element: null,
+	/** @type {boolean} Prevent further instances */
 	onlyInstance: true, // Prevent further instances
+	/** @type {boolean} Enforce direct instance reference */
 	privateInstance: false, // Enforces use of direct instance reference & prevent late plugins
+	/** @type {boolean} Allow late plugin addition */
 	allowLatePlugins: true, // Prevent pluginAdd after ScopeDom init (defaults to false on privateInstance)
+	/** @type {boolean} Defer signals */
 	signalDefer: true,
+	/** @type {boolean} Proxy all signals */
 	signalProxyAll: true,
 };
 let initOptionsScriptTag = null;
 
-/** @template {object} scopeElementAttrib */
+/**
+ * Default values for scope element attributes.
+ *
+ * @template {object} scopeElementAttribDefaults
+ * @typedef {object} scopeElementAttribDefaults
+ */
 const scopeElementAttribDefaults = {
-	/** @type {boolean} */
+	/** @type {boolean} If this is a default attribute */
 	isDefault: true,
-	/** @type {string|null} */
+	/** @type {string|null} Original attribute name */
 	attribute: null,
-	/** @type {string|null} */
+	/** @type {string|null} Name key for the attribute */
 	nameKey: null,
-	/** @type {string|null} */
+	/** @type {string|null} Parts of the name */
 	nameParts: null,
-	/** @type {string|null} */
+	/** @type {string|null} Attribute value */
 	value: null,
-	/** @type {Map<string,scopeElementAttribOption>|null} */
+	/** @type {Map<string,scopeElementAttribOptionDefaults>|null} Options map */
 	options: null,
 };
 
-/** @template {object} scopeElementAttribOption */
+/**
+ * Default values for scope element attribute options.
+ * 
+ * @template {object} scopeElementAttribOptionDefaults
+ * @typedef {object} scopeElementAttribOptionDefaults
+ */
 const scopeElementAttribOptionDefaults = {
-	/** @type {boolean} */
+	/** @type {boolean} If this is a default attribute option */
 	isDefault: false,
-	/** @type {string|null} */
+	/** @type {string|null} Original attribute name */
 	attribute: null,
-	/** @type {string|null} */
+	/** @type {string|null} Name key for the option */
 	nameKey: null,
-	/** @type {Array<string>|null} */
+	/** @type {Array<string>|null} String parts of the option */
 	optionParts: null,
-	/** @type {string|null} */
+	/** @type {string|null} Option value */
 	value: null
 };
 
-/** @type {Set<ScopeDom>} */
+/**
+ * Set containing all ScopeDom instances.
+ * 
+ * @type {Set<ScopeDom>}
+ */
 const allInstances = new Set();
 
-/** @type {ScopeDom|null} */
+/**
+ * The main (first) ScopeDom instance.
+ * 
+ * @type {ScopeDom|null}
+ */
 let mainInstance = null;
 
-/** @type {ScopeDom|null} */
+/**
+ * Restrict ScopeDom instances to only one.
+ * 
+ * @type {ScopeDom|null}
+ */
 let onlyInstance = null;
 
-/** @type {Set<object|Function>|null} */
+/**
+ * Set of post-main plugins to be loaded after the main instance is created.
+ * 
+ * @type {Set<object|Function>|null}
+ */
 let pluginsPostMain = null;
 
 /**
- * @typedef ScopeDomCtrlCallbackObj
- * @prop {Proxy|object|any} scope
- * @prop {ScopeDom} instance
- * @prop {scopeController} controller
- * @prop {typeof scopeController.prototype.$signal} signal
- * @prop {typeof signalController.prototype.createSignal} createSignal
- * @prop {typeof signalController.prototype.defineSignal} defineSignal
- * @prop {typeof signalController.prototype.assignSignals} assignSignals
- * @prop {typeof signalController.prototype.computeSignal} computeSignal
- * @prop {typeof signalController.prototype.proxySignal} proxySignal
- * @prop {typeof signalController.prototype.defineProxySignal} defineProxySignal
- * @prop {typeof signalController.prototype.preventUpdates} preventUpdates
- * @prop {typeof signalController.prototype.preventObservers} preventObservers
+ * Object passed to scope controller callback function.
+ * 
+ * @typedef {object} ScopeDomCtrlCallbackObj
+ * @property {Proxy|object|any} scope The proxy scope object
+ * @property {ScopeDom} instance The ScopeDom instance
+ * @property {scopeController} controller The scope controller
+ * @property {typeof scopeController.prototype.$signal} signal Signal helper method
+ * @property {typeof signalController.prototype.createSignal} createSignal Create signal method
+ * @property {typeof signalController.prototype.defineSignal} defineSignal Define signal method
+ * @property {typeof signalController.prototype.assignSignals} assignSignals Assign signals method
+ * @property {typeof signalController.prototype.computeSignal} computeSignal Compute signal method
+ * @property {typeof signalController.prototype.proxySignal} proxySignal Proxy signal method
+ * @property {typeof signalController.prototype.defineProxySignal} defineProxySignal Define proxy signal method
+ * @property {typeof signalController.prototype.preventUpdates} preventUpdates Prevent updates method
+ * @property {typeof signalController.prototype.preventObservers} preventObservers Prevent observers method
  */
 
 /**
+ * Callback for scope controller functions.
+ *
  * @callback ScopeDomCtrlCallback
- * @param {ScopeDomCtrlCallbackObj} detailsObject { scope, instance, controller, signal, createSignal, defineSignal, assignSignals, computeSignal, proxySignal, defineProxySignal, preventUpdates, preventObservers }
+ * @param {ScopeDomCtrlCallbackObj} detailsObject
  * @returns {void}
  */
 
-/** @class ScopeDom
- * The Main ScopeDom Class.
+/**
+ * The main ScopeDom class for DOM manipulation and scope management.
+ * 
+ * Provides DOM scanning, watching, and connection capabilities along with scope controller management.
+ * 
+ * @class ScopeDom
  */
 class ScopeDom {
 	
 	/**
 	 * Parse script tag attributes.
+	 * 
 	 * data-scopedom-init attribute for automatic initialisation.
 	 * data-scopedom-options attribute for initialisation options.
+	 * 
+	 * @static
 	 */
 	static setupScriptTag(){
 		ScopeDom.setupScriptTag = noopFn;
@@ -156,9 +221,13 @@ class ScopeDom {
 	
 	/**
 	 * Initialise the main instance of ScopeDom.
+	 *
+	 * This method creates and initializes the main ScopeDom instance, then begins DOM watching.
+	 * It should only be called once to set up the primary ScopeDom instance.
+	 *
 	 * @static
-	 * @param {ScopeDomInitOptions|object|null} [initOptions] ScopeDom instance initialisation options
-	 * @returns {ScopeDom}
+	 * @param {initOptionsDefaults|object|null} [initOptions] ScopeDom instance initialisation options
+	 * @returns {ScopeDom} The newly created ScopeDom instance
 	 * @throws {Error} If main instance has already been initialised
 	 */
 	static init(initOptions={}){
@@ -171,6 +240,7 @@ class ScopeDom {
 	 * Get the main instance of ScopeDom if it has already been initialised.
 	 * 
 	 * If the main instance is private, then an error is thrown.
+	 * 
 	 * @static
 	 * @returns {ScopeDom} The main instance of ScopeDom
 	 * @throws {Error} If the main instance has not yet been initialised, or if it's private
@@ -183,6 +253,7 @@ class ScopeDom {
 	
 	/**
 	 * Define scope controller on main ScopeDom instance.
+	 * 
 	 * @static
 	 * @param {Function|string|null} [name] Scope Controller Name
 	 * @param {ScopeDomCtrlCallback} [fn] Scope Controller Function
@@ -194,6 +265,7 @@ class ScopeDom {
 	
 	/**
 	 * Add a plugin to all ScopeDom instances.
+	 * 
 	 * @param {object|Function} plugin Plugin object or constructor function
 	 * @returns {boolean} True if plugin was added successfully
 	 * @throws {Error} If late plugin adding is disabled
@@ -208,12 +280,15 @@ class ScopeDom {
 	
 	/**
 	 * Initialize a new ScopeDom instance
+	 *
 	 * @constructor
-	 * @param {ScopeDomInitOptions|object|null} initOptions Configuration options for the instance
+	 * @param {initOptionsDefaults|object|null} initOptions Configuration options for the instance
+	 * @throws {Error} If a private instance is already initialized, if documentContext is false when globalContext isn't, or onlyInstance is true when the main instance already exists
 	 */
 	constructor(initOptions={}){
 		if(onlyInstance) throw new Error("ScopeDom: a private instance is already initialised");
 		initOptions = { __proto__:null, ...initOptionsScriptTag, ...initOptions };
+		/** @type {initOptionsDefaults} Configuration options for this instance */
 		let options = { __proto__:null, ...initOptionsDefaults, ...initOptions };
 		if(!options.globalContext && options.documentContext && !options.documentDefaultView && window.document) disableDocumentDefaultView();
 		else if(options.globalContext && !options.documentContext) throw new Error("ScopeDom: For documentContext to be false, globalContext must also be false");
@@ -222,28 +297,44 @@ class ScopeDom {
 		if(!mainInstance) mainInstance = this;
 		allInstances.add(this);
 		let scope = options.scope===Object(options.scope) ? options.scope : new scopeBase();
-		/** @type {ScopeDomInitOptions} */
+		/** @type {initOptionsDefaults} Configuration options for this instance */
 		this.options = options;
-		/** @type {HTMLElement|null} */
+		/** @type {HTMLElement|null} The main element being watched */
 		this.mainElement = options.element || null;
-		/** @type {scopeController} */
+		/** @type {scopeController} The scope controller instance */
 		this.scopeCtrl = new scopeController(scope,null,null,false,this);
+		/** @type {Map} Named controllers map */
 		this.namedControllers = new Map();
+		/** @type {Map} Cache for DOM watchers */
 		this.cacheWatchObservers = new Map();
+		/** @type {WeakSet} Cache for connected nodes */
 		this.cacheConnectedNodes = new WeakSet();
+		/** @type {Set} Pending connection nodes */
 		this.pendingConnectNodes = new Set();
+		/** @type {Map} Pending element loaded callbacks */
 		this.pendingOnElementLoaded = new Map();
+		/** @type {WeakMap} Cache for element scope controllers */
 		this.cacheElementScopeCtrls = new WeakMap();
+		/** @type {WeakMap} Cache for element attributes */
 		this.cacheElementAttribs = new WeakMap();
+		/** @type {WeakMap} Cache for element attribute defaults */
 		this.cacheElementAttribsDefaults = new WeakMap();
+		/** @type {WeakSet} Nodes to ignore */
 		this.ignoreNodes = new WeakSet();
+		/** @type {WeakMap} Element-related event listeners */
 		this.elementRelatedEventListeners = new WeakMap();
+		/** @type {WeakMap} Element extra scopes */
 		this.elementExtraScopes = new WeakMap(); // element -> array -> objects/elements
+		/** @type {WeakMap} Element isolated scopes */
 		this.elementIsolatedScopes = new WeakSet();
+		/** @type {Set} Ready callbacks listeners */
 		this.onReadyListeners = new Set();
+		/** @type {Set} DOM ready callbacks listeners */
 		this.onDOMReadyListeners = new Set();
+		/** @type {boolean} Flag indicating if currently executing onReady callbacks */
 		this.isDuringOnReady = false;
 		// Plugins
+		/** @type {object} Plugin system object */
 		this.plugins = { init:false, register:new Set(), onConnect:new Set(), onDisconnect:new Set(), onPluginAdd:new Set(), onExpression:new Set() };
 		try{ this.initPlugins(); }catch(err){ console.error("ScopeDom: error during initPlugins:",err); }
 		if(mainInstance===this){
@@ -256,6 +347,7 @@ class ScopeDom {
 	
 	/**
 	 * Start a MutationObserver to observe for changes on the DOM.
+	 * 
 	 * Begins watching the main element or document.body for DOM changes.
 	 * Triggers scanning and ready callbacks when main element is found.
 	 */
@@ -282,6 +374,7 @@ class ScopeDom {
 	
 	/**
 	 * Define scope controller.
+	 * 
 	 * @param {Function|string|null} name Scope Controller Name
 	 * @param {ScopeDomCtrlCallback} fn Scope Controller Function
 	 * @returns {ScopeDom} ScopeDom instance
@@ -314,6 +407,7 @@ class ScopeDom {
 	 * Handle scope controller function execution.
 	 * 
 	 * An object is passed as the only function argument, with scope (Proxy), instance, controller, and most signal helper methods.
+	 * 
 	 * @param {Proxy|object} proxy The proxy object for scope access
 	 * @param {ScopeDomCtrlCallback} fn The controller function to execute
 	 */
@@ -332,12 +426,14 @@ class ScopeDom {
 	 * Scan and connect DOM tree.
 	 * 
 	 * Alias of connectElementAndChildren.
+	 * 
 	 * @param {...*} args Arguments passed to connectElementAndChildren
 	 */
 	scanDomTree(...args){ return this.connectElementAndChildren(...args); }
 	
 	/**
 	 * Watch DOM tree for changes using MutationObserver.
+	 * 
 	 * @param {HTMLElement} element The element to watch
 	 */
 	watchDomTree(element){
@@ -359,7 +455,8 @@ class ScopeDom {
 	 * Set up ready callback when DOM becomes interactive or complete.
 	 * 
 	 * Triggers onReady immediately if DOM is already loaded.
-	 * @param {boolean} domComplete Whether DOM is complete
+	 * 
+	 * @param {boolean} domComplete DOM is complete
 	 */
 	setReadyOnDomLoaded(){
 		if(document.readyState!=='loading') this.triggerOnReady(); // Do not delay this
@@ -374,8 +471,7 @@ class ScopeDom {
 	}
 	
 	/**
-	 * Set up ready callback to fire on next RAF.
-	 * @param {boolean} domComplete Whether DOM is complete
+	 * Set up ready callback to fire on next requestAnimationFrame.
 	 */
 	setReadyOnRaf(){
 		if(!this.onReadyListeners) return;
@@ -384,20 +480,22 @@ class ScopeDom {
 	
 	/**
 	 * Check if all ready callbacks have been triggered.
+	 * 
 	 * @returns {boolean} True if ready
 	 */
-	
 	isReady(){ return !this.onReadyListeners; }
 	
 	/**
 	 * Check if DOM is ready (all DOM ready callbacks triggered).
+	 * 
 	 * @returns {boolean} True if DOM is ready
 	 */
 	isDOMReady(){ return !this.onDOMReadyListeners; }
 	
 	/**
 	 * Trigger all registered ready callbacks.
-	 * @param {boolean} [domComplete=false] Whether DOM is complete
+	 * 
+	 * @param {boolean} [domComplete=false] DOM is complete
 	 */
 	triggerOnReady(domComplete=false){
 		this.checkPendingConnectElements();
@@ -418,6 +516,7 @@ class ScopeDom {
 	
 	/**
 	 * Listen for when the DOM is first interactive or complete.
+	 * 
 	 * @param {Function} cb Callback function to execute
 	 * @param {boolean} [delay=true] Defer microtask or run instantly
 	 */
@@ -429,6 +528,7 @@ class ScopeDom {
 	
 	/**
 	 * Listen for when the DOM is complete.
+	 * 
 	 * @param {Function} cb Callback function to execute
 	 * @param {boolean} [defer=true] Defer to microtask
 	 */
@@ -440,6 +540,7 @@ class ScopeDom {
 	
 	/**
 	 * Register a callback to be called when an element is loaded.
+	 * 
 	 * @param {HTMLElement} element The element to watch
 	 * @param {Function} cb Callback function to execute when element is loaded
 	 */
@@ -453,6 +554,7 @@ class ScopeDom {
 	
 	/**
 	 * Check if an element should be ignored based on ignore attributes.
+	 * 
 	 * @param {HTMLElement} element The element to check
 	 * @param {boolean} [checkParents=false] Check parent elements
 	 * @returns {boolean} True if element should be ignored
@@ -472,6 +574,7 @@ class ScopeDom {
 	
 	/**
 	 * Connect an element and all its children.
+	 * 
 	 * @param {HTMLElement} element The element to connect
 	 * @param {boolean} [act=true] Connect elements
 	 * @param {Set} [list] Set of elements being processed
@@ -488,6 +591,7 @@ class ScopeDom {
 	
 	/**
 	 * Disconnect an element and all its children.
+	 * 
 	 * @param {HTMLElement} element The element to disconnect
 	 * @param {boolean} [act=true] Disconnect elements
 	 * @param {Set} [list] Set of elements being processed
@@ -501,6 +605,7 @@ class ScopeDom {
 	
 	/**
 	 * Element is being connected (added into DOM).
+	 * 
 	 * @param {HTMLElement} element Connected element
 	 */
 	connectElement(element){
@@ -514,6 +619,7 @@ class ScopeDom {
 	
 	/**
 	 * Element is being disconnected (removed from DOM).
+	 * 
 	 * @param {HTMLElement} element Disconnected element
 	 */
 	disconnectElement(element){
@@ -537,10 +643,11 @@ class ScopeDom {
 	
 	/**
 	 * Find ScopeDom attributes for an element.
+	 * 
 	 * @param {HTMLElement} element The element
 	 * @param {boolean} [useCache=true] Use cached results
 	 * @param {boolean} [checkConnected=true] Check if element is connected
-	 * @returns {Map<string,scopeElementAttrib>|null}
+	 * @returns {Map<string,scopeElementAttribDefaults>|null}
 	 */
 	elementAttribs(element,useCache=true,checkConnected=true){
 		if(checkConnected && (!this.cacheConnectedNodes.has(element) || !element.isConnected)) return null;
@@ -573,10 +680,11 @@ class ScopeDom {
 	
 	/**
 	 * Find ScopeDom default attributes for an element by traversing up the DOM tree.
+	 * 
 	 * @param {HTMLElement} element The element to find defaults for
 	 * @param {boolean} [useCache=true] Use cached results
 	 * @param {boolean} [checkConnected=true] Check if element is connected
-	 * @returns {Map<string,scopeElementAttrib>|null} Map of default attribute names to attribute objects
+	 * @returns {Map<string,scopeElementAttribDefaults>|null} Map of default attribute names to attribute objects
 	 */
 	elementFindDefaults(element,useCache=true,checkConnected=true){
 		if(checkConnected && (!this.cacheConnectedNodes.has(element) || !element.isConnected)) return null;
@@ -604,11 +712,12 @@ class ScopeDom {
 	
 	/**
 	 * Get attribute options with defaults merged in.
+	 * 
 	 * @param {HTMLElement} element The element
-	 * @param {scopeElementAttrib} attrib The attribute object
+	 * @param {scopeElementAttribDefaults} attrib The attribute object
 	 * @param {boolean} [useCache=true] Use cached results
 	 * @param {boolean} [checkConnected=true] Check if element is connected
-	 * @returns {Map<string,scopeElementAttribOption>} Merged options map
+	 * @returns {Map<string,scopeElementAttribOptionDefaults>} Merged options map
 	 */
 	elementAttribOptionsWithDefaults(element,attrib,useCache=true,checkConnected=true){
 		let { nameKey, nameParts, options } = attrib;
@@ -621,7 +730,8 @@ class ScopeDom {
 	
 	/**
 	 * Get attribute's value, with fallback to other option values.
-	 * @param {scopeElementAttrib} attrib The attribute object
+	 * 
+	 * @param {scopeElementAttribDefaults} attrib The attribute object
 	 * @param {Array<string>|Set<string>|null} [whitelist] Whitelist of option keys/names
 	 * @param {boolean} [updateOption=true] Update the fallback option 's value to '' (consume)
 	 * @param {boolean} [updateAttrib=true] Update attribute with fallback value
@@ -648,11 +758,12 @@ class ScopeDom {
 	
 	/**
 	 * Parse an attribute optionm used mostly by plugins.
+	 * 
 	 * @param {HTMLElement} element The element
-	 * @param {Map<string,scopeElementAttribOption>} attribOpts The attribute options map
+	 * @param {Map<string,scopeElementAttribOptionDefaults>} attribOpts The attribute options map
 	 * @param {string} optName The option key/name ($attr:foo-bar becomes 'foo bar')
 	 * @param {object|any} [parseOptions] Options for parsing, default (default value), emptyTrue (treat empty as true), runExp (run the expression straight away)
-	 * @returns {{value:*, raw:string|null, attribOption:scopeElementAttribOption|null, isDefault:boolean}} Parsed option result
+	 * @returns {{value:any, raw:string|null, attribOption:scopeElementAttribOptionDefaults|null, isDefault:boolean}} Parsed option result
 	 */
 	elementAttribParseOption(element,attribOpts,optName,parseOptions={}){
 		parseOptions = { __proto__:null, default:null, emptyTrue:false, runExp:false, ...parseOptions };
@@ -670,6 +781,7 @@ class ScopeDom {
 	
 	/**
 	 * Create a new scopeElementController for an element.
+	 * 
 	 * @param {HTMLElement} element The element
 	 * @param {scopeBase|object|null} [newScope] The new or existing scopeController
 	 * @param {scopeController} [parentScopeCtrl] The parent scopeController
@@ -686,6 +798,7 @@ class ScopeDom {
 	
 	/**
 	 * Create a new isolated scopeController for an element.
+	 * 
 	 * @param {HTMLElement} element The element
 	 * @param {scopeBase|object|null} [newScope] The new or existing scopeController
 	 * @param {scopeController} [parentScopeCtrl] The parent scopeController
@@ -704,7 +817,8 @@ class ScopeDom {
 	 * This creates an alias to a different element, so any scopeElementController lookups on this new element, will return the scopeElementController for the original element.
 	 * 
 	 * Useful for DOM element swapping ($if:dom for example).
-	 * It also aliases element extra scopes & element isolated scopes
+	 * It also aliases element extra scopes & element isolated scopes.
+	 * 
 	 * @param {HTMLElement} toElement The new element to set alias for
 	 * @param {HTMLElement} fromElement The original element to alias from
 	 */
@@ -728,6 +842,7 @@ class ScopeDom {
 	
 	/**
 	 * Create or re-use scopeElementController for this element.
+	 * 
 	 * @param {HTMLElement} element The element to create a scopeElementController for
 	 * @param {boolean} [useCache=true] Use cached scopeElementController
 	 * @param {boolean} [findParent=true] Include parent controller for scopeElementController
@@ -746,6 +861,7 @@ class ScopeDom {
 	
 	/**
 	 * Find the closest parent scopeElementController for an element.
+	 * 
 	 * @param {HTMLElement} element The element
 	 * @returns {scopeElementController|null} The parent scope controller or null
 	 */
@@ -758,6 +874,7 @@ class ScopeDom {
 	
 	/**
 	 * Execute an expression on an element via scopeElementController.
+	 * 
 	 * @param {scopeElementController} elementScopeCtrl The scopeElementController
 	 * @param {string} expression The expression to execute
 	 * @param {object|null} [extra=null] Extra scopes (handy for plugins)
@@ -772,6 +889,7 @@ class ScopeDom {
 	
 	/**
 	 * Get all element extra scopes for an element.
+	 * 
 	 * @param {HTMLElement} element The element
 	 * @param {Array<object>} [eScopes] Accumulator array (internal use)
 	 * @returns {Array<object>} Array of [element, scopesArray] pairs
@@ -787,6 +905,7 @@ class ScopeDom {
 	
 	/**
 	 * Resolve element scopes recursively (used by getElementScopes).
+	 * 
 	 * @param {HTMLElement} key The key/element
 	 * @param {HTMLElement|null} [isolated=null] The isolated element
 	 * @param {Set<HTMLElement>} [uniqueKeys] Set of unique keys to prevent recursion
@@ -818,6 +937,7 @@ class ScopeDom {
 	/**
 	 * Register an event listener to be removed on disconnect.
 	 * Any event listeners related to an element, should call this to cleanup after itself.
+	 * 
 	 * @param {HTMLElement} element The element
 	 * @param {Function} removeListener The function to remove the listener
 	 */
@@ -829,6 +949,7 @@ class ScopeDom {
 	
 	/**
 	 * Remove event listeners related to the element.
+	 * 
 	 * @param {HTMLElement} element The element
 	 */
 	removeElementRelatedEvents(element){
@@ -843,6 +964,7 @@ class ScopeDom {
 	/**
 	 * Gets signal for given key/variable expression. If it doesnt exist, it creates one.
 	 * Useful for making sure a variable exists, to be usable elsewhere.
+	 * 
 	 * @param {Element} element Element for elementScopeController instance
 	 * @param {string} key Expression (scope variable name)
 	 * @returns {object} { signal, expFn } expFn is an expression function that returns the expression's result.
@@ -862,6 +984,7 @@ class ScopeDom {
 	
 	/**
 	 * Trigger connect for an element - handles all attribute processing.
+	 * 
 	 * @param {HTMLElement} element The element being connected
 	 */
 	triggerElementConnect(element){
@@ -1041,6 +1164,7 @@ class ScopeDom {
 	
 	/**
 	 * Trigger disconnect for an element - handles cleanup.
+	 * 
 	 * @param {HTMLElement} element The element being disconnected
 	 */
 	triggerElementDisconnect(element){
@@ -1075,6 +1199,7 @@ class ScopeDom {
 	
 	/**
 	 * Cleanup disconnected element caches and listeners.
+	 * 
 	 * @param {WeakKey} element The element to cleanup
 	 * @param {boolean} [completely=false] Clear connected nodes cache & pending connect nodes
 	 */
@@ -1096,16 +1221,21 @@ class ScopeDom {
 	
 	/**
 	 * @typedef pluginTemplate
-	 * @prop {Function} onConnect
-	 * @prop {Function} onDisconnect
-	 * @prop {Function} onPluginAdd
-	 * @prop {Function} onExpression
+	 * @property {Function} onConnect Callback for when an element is connected
+	 * @property {Function} onDisconnect Callback for when an element is disconnected
+	 * @property {Function} onPluginAdd Callback for when a plugin is added
+	 * @property {Function} onExpression Callback for when an expression is being built
 	 */
 	
 	/**
 	 * Add a plugin to this instance.
+	 *
+	 * Registers a plugin and binds its lifecycle hooks to the plugin system.
+	 * If late plugin adding is disabled, an error is thrown.
+	 * 
 	 * @param {pluginTemplate|Function} plugin Plugin object or constructor function
 	 * @throws {Error} If late plugin adding is disabled
+	 * @returns {boolean} True if plugin was added successfully
 	 */
 	pluginAdd(plugin){
 		if(!this.options.allowLatePlugins) throw console.log(this.options), new Error("ScopeDom: late plugin adding is disabled, due to instance { allowLatePlugins:false }");
@@ -1127,6 +1257,10 @@ class ScopeDom {
 	
 	/**
 	 * Initialize all plugins for this instance.
+	 * 
+	 * Loads all post-main plugins and registers them with the plugin system.
+	 * 
+	 * @throws {Error} If late plugin adding is disabled
 	 */
 	initPlugins(){
 		if(this.plugins.init) return;
@@ -1137,7 +1271,10 @@ class ScopeDom {
 	
 	/**
 	 * Trigger all onConnect plugin callbacks.
-	 * @param {pluginOnElementPlug} plugObj The pluginOnElementPlug object
+	 * 
+	 * Iterates through all registered plugins and executes onConnect with the provided pluginOnElementPlug object.
+	 * 
+	 * @param {pluginOnElementPlug} plugObj The pluginOnElementPlug object containing element and scope information
 	 */
 	pluginsOnConnect(plugObj){
 		for(let pluginOnConnect of this.plugins.onConnect) try{ pluginOnConnect(plugObj); }catch(err){ console.error(err); }
@@ -1145,7 +1282,10 @@ class ScopeDom {
 	
 	/**
 	 * Trigger all onDisconnect plugin callbacks.
-	 * @param {pluginOnElementPlug} plugObj The pluginOnElementPlug object
+	 * 
+	 * Iterates through all registered plugins and executes onDisconnect with the provided pluginOnElementPlug object.
+	 * 
+	 * @param {pluginOnElementPlug} plugObj The pluginOnElementPlug object containing element and scope information
 	 */
 	pluginsOnDisconnect(plugObj){
 		for(let pluginOnDisconnect of this.plugins.onDisconnect) try{ pluginOnDisconnect(plugObj); }catch(err){ console.error(err); }
@@ -1153,7 +1293,10 @@ class ScopeDom {
 	
 	/**
 	 * Trigger all onPluginAdd plugin callbacks.
-	 * @param {pluginOnElementPlug} plugObj The pluginOnElementPlug object
+	 *
+	 * Iterates through all registered plugins and executes onPluginAdd with the provided pluginOnElementPlug object.
+	 *
+	 * @param {pluginOnElementPlug} plugObj The pluginOnElementPlug object containing element and scope information
 	 */
 	pluginsOnPluginAdd(plugObj){
 		for(let pluginOnPluginAdd of this.plugins.onPluginAdd) try{ pluginOnPluginAdd(plugObj); }catch(err){ console.error(err); }
@@ -1161,7 +1304,10 @@ class ScopeDom {
 	
 	/**
 	 * Trigger all onExpression plugin callbacks.
-	 * @param {pluginOnElementExpression} expObj The pluginOnElementExpression object
+	 * 
+	 * Iterates through all registered plugins and executes onExpression with the provided pluginOnElementExpression object.
+	 * 
+	 * @param {pluginOnElementExpression} expObj The pluginOnElementExpression object containing expression & scope information
 	 */
 	pluginsOnElementExpression(expObj){
 		for(let pluginOnExpression of this.plugins.onExpression) try{ pluginOnExpression(expObj); }catch(err){ console.error(err); }
@@ -1169,10 +1315,13 @@ class ScopeDom {
 	
 	/**
 	 * Run onConnect for a late-added plugin on existing elements.
+	 * 
+	 * Recursively processes the DOM tree starting at given element, and executes onConnect with element & all children.
+	 * 
 	 * @param {{ onConnect:Function }} plugin The plugin with onConnect method
 	 * @param {HTMLElement} element The element to run connect on
 	 * @param {boolean} [act=true] Run onConnect for this plugin
-	 * @param {Set} [list] Internal accumulator list
+	 * @param {Set} [list] Internal accumulator list for tracking elements
 	 */
 	latePluginAdd_runConnect(plugin,element,act=true,list=new Set()){
 		if(!plugin || !this.plugins.init || !this.cacheConnectedNodes.has(element)) return;
@@ -1191,40 +1340,62 @@ class ScopeDom {
 	
 }
 
-/** @class pluginOnElementPlug
+/**
  * Object passed to onConnect, onDisconnect and onPluginAdd for plugins.
+ * 
+ * This class provides context information to plugin lifecycle callbacks,
+ * including the ScopeDom instance, element, scope controller, and ScopeDom attributes.
+ * 
+ * @class pluginOnElementPlug
  */
 class pluginOnElementPlug {
 	/**
 	 * @constructor
 	 * @param {ScopeDom} instance The ScopeDom instance
-	 * @param {HTMLElement} element The element
-	 * @param {scopeElementController} elementScopeCtrl The scopeElementController
-	 * @param {Map<string,scopeElementAttrib>} attribs ScopeDom attributes
+	 * @param {HTMLElement} element The DOM element
+	 * @param {scopeElementController} elementScopeCtrl The scopeElementController for the element
+	 * @param {Map<string,scopeElementAttribDefaults>} attribs ScopeDom attributes object
 	 */
 	constructor(instance,element,elementScopeCtrl,attribs){
+		/** @type {ScopeDom} The ScopeDom instance */
 		this.instance = instance;
+		/** @type {HTMLElement} The DOM element */
 		this.element = element;
+		/** @type {scopeElementController} The scopeElementController for the element */
 		this.elementScopeCtrl = elementScopeCtrl;
+		/** @type {Map<string,scopeElementAttribDefaults>} ScopeDom attributes object */
 		this.attribs = attribs;
 	}
 }
 
-/** @class pluginOnElementExpression
+/**
  * Object passed to onExpression for plugins.
+ * 
+ * This class provides context information to plugin expression callbacks,
+ * including the ScopeDom instance, element, scope controller, and expression object.
+ * 
+ * @class pluginOnElementExpression
  */
 class pluginOnElementExpression {
 	/**
 	 * @constructor
 	 * @param {ScopeDom} instance The ScopeDom instance
-	 * @param {HTMLElement} element The element
-	 * @param {scopeElementController} elementScopeCtrl The scopeElementController
-	 * @param {object} expObj ScopeDom expression object { expression, mainScopes, otherScopes, options }
+	 * @param {HTMLElement} element The DOM element
+	 * @param {scopeElementController} elementScopeCtrl The scopeElementController for the element
+	 * @param {object} expObj The ScopeDom expression object
+	 * @param {string} expObj.expression Raw expression as a string. Modify this.
+	 * @param {Set} expObj.mainScopes List of main scopes to pass into the expression builder
+	 * @param {Set} expObj.otherScopes List of other scopes to pass into the expression builder
+	 * @param {execExp.execExpOptions|object|null} expObj.options Execution options
 	 */
 	constructor(instance,element,elementScopeCtrl,expObj){
+		/** @type {ScopeDom} The ScopeDom instance */
 		this.instance = instance;
+		/** @type {HTMLElement} The DOM element */
 		this.element = element;
+		/** @type {scopeElementController} The scopeElementController for the element */
 		this.elementScopeCtrl = elementScopeCtrl;
+		/** @type {object} The ScopeDom expression object { expression, mainScopes, otherScopes, options } */
 		this.expressionObj = expObj;
 	}
 }

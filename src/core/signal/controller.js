@@ -21,20 +21,45 @@ import { signalProxy, resolveSignal } from "./proxy.js";
 
 /**
  * Signal Controller for managing signals and observers.
+ * 
+ * The signal controller is the central orchestrator of the reactive signal system.
+ * 
+ * This class provides methods to:
+ * - Create and manage {@link signalInstance} objects (basic reactive values)
+ * - Create and manage {@link signalObserver} objects (dependency trackers)
+ * - Define signals on object properties via getters/setters
+ * - Create computed signals (both PUSH-based for automatic updates and PULL-based for lazy evaluation)
+ * - Create deep reactive proxies that enable infinitely nested reactivity
+ * 
  * @class signalController
+ * @property {scopeController} scopeCtrl - The parent scope controller
+ * 
+ * @see {@link signalController} - Signal Controller for managing signals and observers
+ * @see {@link signalObserver} - Signal Observer for tracking signal dependencies
+ * @see {@link signalInstance} - Signal Instance that represents a reactive signal value
+ * @see {@link signalProxy} - Signal Proxy for deep reactivity for objects with automatic signal tracking
  */
 export class signalController {
 	
+	/** @type {boolean} Internal flag to prevent observer update triggers during sensitive operations */
 	#preventUpdates = false;
+	
+	/** @type {boolean} Internal flag to prevent observers from recording signals during sensitive operations */
 	#preventObservers = false;
+	
+	/** @type {Set<object>} Set of observers currently in recording mode (tracking their accessed signals as dependencies) */
 	#observersRecording = new Set();
+	
+	/** @type {Set<object>} Set of all registered observers managed by this controller */
 	#observers = new Set();
 	
 	/**
 	 * Constructs a new signalController with a reference to the parent scope controller.
 	 * 
 	 * If a scopeElementController is provided, it extracts the underlying signalController.
+	 * 
 	 * @constructor
+	 * @param {scopeController|scopeElementController} scopeCtrl - The parent scope controller
 	 */
 	constructor(scopeCtrl){
 		if(scopeCtrl instanceof scopeElementController) scopeCtrl = scopeCtrl.ctrl;
@@ -44,15 +69,19 @@ export class signalController {
 	/**
 	 * Creates a new signalObserver instance.
 	 * 
-	 * Observers track which signals they depend on and can react to changes.
-	 * @param {object} options - Observer configuration options
+	 * Observers track which signals they depend on and can react to changes. 
+	 * When any dependent signal changes, the observer's listeners are invoked via {@link triggerChange}.
+	 * Observers are automatically registered with this controller so they receive change notifications.
+	 * 
+	 * @param {object} options - Observer configuration options (see {@link signalObserver})
 	 * @param {boolean} [options.defer=false] - Defer observer listener execution
-	 * @returns {signalObserver} The newly created signalObserver instance
+	 * @returns {signalObserver} The newly created signalObserver instance (also added to this controller's observers set)
 	 */
 	createObserver(options={}){ let o=new signalObserver(this,options); this.#observers.add(o); return o; }
 	
 	/**
 	 * Removes a signalObserver from the controller.
+	 * 
 	 * @param {signalObserver} observer - The observer to remove
 	 * @param {boolean} [clear=true] - Clear the observer's signals and listeners
 	 * @throws {TypeError} If observer is not a signalObserver instance
@@ -67,6 +96,7 @@ export class signalController {
 	 * Begins recording signals for a specific observer.
 	 * 
 	 * Signals accessed while an observer is in recording mode are tracked as dependencies.
+	 * 
 	 * @param {signalObserver} observer - The observer to start recording for
 	 * @throws {TypeError} If observer is not a signalObserver instance
 	 */
@@ -77,6 +107,7 @@ export class signalController {
 	
 	/**
 	 * Stops recording signals for a specific observer.
+	 * 
 	 * @param {signalObserver} observer - The observer to stop recording for
 	 * @throws {TypeError} If observer is not a signalObserver instance
 	 */
@@ -88,7 +119,9 @@ export class signalController {
 	/**
 	 * Triggers a change notification to all observers that have the given signal recorded.
 	 * 
-	 * Each observer's change listeners are then invoked, either immediately or deferred based on the observer's configuration.
+	 * When a signal changes value, it calls this method which then notifies all dependent observers via {@link signalObserver.triggerChange}.
+	 * Observers may execute immediately or defer based on their configuration.
+	 * 
 	 * @param {signalInstance} signal - The signal that changed
 	 * @param {any} oldValue - The previous value before the change
 	 * @param {any} newValue - The new value after the change
@@ -101,8 +134,9 @@ export class signalController {
 	}
 	
 	/**
-	 * Triggers the specified signal to be recorded on currently recording observers.
-	 * @param {signalInstance} signal - The signal to record
+	 * Triggers the specified signal to be recorded on currently recording observers, as a dependency.
+	 * 
+	 * @param {signalInstance} signal - The signal to record on observers
 	 * @throws {TypeError} If signal is not a signalInstance instance
 	 */
 	triggerRecording(signal){
@@ -111,10 +145,14 @@ export class signalController {
 	}
 	
 	/**
-	 * This method wraps a function in a context where signal recording is disabled for existing observers.
-	 * This is useful for nested operations like computed signals. Nested observers can still record.
+	 * This method wraps a function in a context where signal recording is temporarily disabled for existing observers.
+	 * Used internally by {@link computeSignalPush} & {@link computeSignalPull}.
+	 * 
+	 * The returned wrapper captures the current set of recording observers, clears them, executes the function, then restores them.
+	 * This prevents nested operations from accidentally recording signals on observers that shouldn't see them during computation.
+	 * 
 	 * @param {Function} fn - Function to run in isolated recording context
-	 * @returns {Function} A wrapped function that executes in isolated recording mode
+	 * @returns {Function} A wrapped function that captures and restores recording observers (executes in isolated recording mode)
 	 * @throws {TypeError} If fn is not a Function
 	 */
 	isolateRecording(fn){
@@ -131,9 +169,13 @@ export class signalController {
 	
 	/**
 	 * Prevents signals from triggering updates to observers during function execution.
+	 * 
+	 * This creates a temporary "quiet zone" where signal changes don't propagate to observers.
+	 * Useful when you need to modify signals without triggering cascading updates, such as during initialisation.
+	 * 
 	 * @param {Function} fn - Function to run without triggering observer updates
 	 * @param {...*} args - Arguments to pass to the function
-	 * @returns {*} The function's result, or throws any error that occurred
+	 * @returns {any} The function's result, or throws any error that occurred
 	 * @throws {TypeError} If fn is not a Function
 	 */
 	preventUpdates(fn,...args){
@@ -148,9 +190,13 @@ export class signalController {
 	
 	/**
 	 * Prevents observers from recording signals during function execution.
+	 * 
+	 * This creates a temporary "quiet zone" where recording observers don't record new signal dependencies.
+	 * Existing tracked signals will still trigger updates.
+	 * 
 	 * @param {Function} fn - Function to run without observers recording signals
 	 * @param {...*} args - Arguments to pass to the function
-	 * @returns {*} The function's result, or throws any error that occurred
+	 * @returns {any} The function's result, or throws any error that occurred
 	 * @throws {TypeError} If fn is not a Function
 	 */
 	preventObservers(fn,...args){
@@ -167,6 +213,7 @@ export class signalController {
 	
 	/**
 	 * Creates a new signalInstance and records it to any recording observers.
+	 * 
 	 * @param {any} value - Initial signal value (cannot be Array, Map, or Set)
 	 * @param {boolean} [useWeakRef=false] - Use WeakRef for the value. It must be referenced elsewhere otherwise it may vanish on a GC event
 	 * @returns {signalInstance} The created signal instance
@@ -182,6 +229,7 @@ export class signalController {
 	
 	/**
 	 * Creates a signalInstance and defines a getter/setter on the target object.
+	 * 
 	 * @param {object} obj - Target object to define the property on
 	 * @param {string} prop - Property name to define
 	 * @param {any} [value=void 0] - Initial signal value or existing signal instance
@@ -204,6 +252,7 @@ export class signalController {
 	
 	/**
 	 * Defines signals for each property from a source object and assigns them to target.
+	 * 
 	 * @param {object} target - Target object to assign signals to
 	 * @param {object} source - Source object to copy properties from
 	 * @returns {object} The target object with signals assigned
@@ -217,6 +266,7 @@ export class signalController {
 	 * Creates a PUSH-based computed signal.
 	 * 
 	 * PUSH-based computed signals compute their value whenever any of their dependency signals change.
+	 * 
 	 * @param {Function} fn - Callback function that computes the signal value
 	 * @param {object} [options={}] - Compute options
 	 * @param {boolean} [options.defer=false] - Defer computation
@@ -245,6 +295,7 @@ export class signalController {
 	 * Creates a PULL-based computed signal.
 	 *
 	 * PULL-based computed signals only compute their value when read.
+	 * 
 	 * @param {Function} fn - Callback function that computes the signal value
 	 * @param {object} [options={}] - Compute options
 	 * @param {boolean} [options.defer=false] - Defer computation
@@ -279,11 +330,14 @@ export class signalController {
 	
 	/**
 	 * Alias that creates a computed signal (PUSH or PULL based).
+	 * 
 	 * @param {Function} fn - Compute callback function
 	 * @param {object} [options={}] - Computed signal options
 	 * @param {boolean} [options.pull=true] - Use PULL-based computation
 	 * @returns {Array<[signalInstance, signalObserver, Function]>} Tuple of [signal, observer, clear function]
 	 * @throws {TypeError} If fn is not a function
+	 * @see {@link computeSignalPull} signalController.computeSignalPull method
+	 * @see {@link computeSignalPush} signalController.computeSignalPush method
 	 */
 	computeSignal(fn,options={}){
 		options = { __proto__:null, pull:true, ...options };
@@ -298,11 +352,14 @@ export class signalController {
 	 * Each nested property becomes a signal that can be tracked and updated independently.
 	 * The proxy supports arrays, Maps, Sets, and other iterable collections with special
 	 * handling for their methods.
+	 * 
 	 * @param {object} value - Object to proxy (must be an object, not a primitive)
 	 * @param {signalInstance} [signal=null] - Pre-existing signal for the target
 	 * @param {boolean} [useWeakRef=false] - Use WeakRef (defaults to true for nested proxies)
 	 * @returns {signalProxy} Proxy of the passed in value
 	 * @throws {TypeError} If value is a primitive
+	 * @see {@link defineProxySignal} signalController.defineProxySignal method
+	 * @see {@link signalProxy} signalProxy class
 	 */
 	proxySignal(value,signal=null,useWeakRef=false){
 		if(value!==Object(value)) throw new TypeError("proxySignal target must not be a primitive");
@@ -311,6 +368,7 @@ export class signalController {
 	
 	/**
 	 * Creates a signalProxy and defines a getter/setter on the target object.
+	 * 
 	 * @param {object} obj - Target object to define the property on
 	 * @param {string} prop - Property name to define
 	 * @param {object} value - Object value to proxy (must be an object, not a primitive)
@@ -318,6 +376,8 @@ export class signalController {
 	 * @param {boolean} [silentFallback=false] - Define primitives without signal proxy
 	 * @returns {signalProxy} Proxy of the passed in value, or undefined if silentFallback with primitive value
 	 * @throws {TypeError} If value is a primitive (use defineSignal instead)
+	 * @see {@link proxySignal} signalController.proxySignal method
+	 * @see {@link signalProxy} signalProxy class
 	 */
 	defineProxySignal(obj,prop,value,signal=null,silentFallback=false){
 		if(!silentFallback && value!==Object(value)) throw new TypeError("defineProxySignal target must not be a primitive, try defineSignal instead");

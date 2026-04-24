@@ -146,7 +146,7 @@ export class pluginCloak {
 	 * 
 	 * @param {Object} plugInfo - Information about the plugin connection
 	 * @param {Object} attrib - The cloak attribute information
-	 * @param {boolean} removeAttrib - Whether to remove attributes
+	 * @param {boolean} removeAttrib - Remove attributes
 	 */
 	#unCloak(plugInfo,attrib,removeAttrib=true){
 		let { instance } = this;

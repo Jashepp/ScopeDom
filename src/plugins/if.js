@@ -441,7 +441,7 @@ export class pluginIf {
 	 * @param {number} updateIndex - The current update index; older results are ignored if a newer one exists
 	 * @param {boolean} performMatch - Match-case evaluation logic should be performed (default: true)
 	 * @param {boolean} updateDependents - Dependent sibling elements should also receive updates (default: false)
-	 * @param {*} result - The evaluated expression result to process
+	 * @param {any} result - The evaluated expression result to process
 	 * @private
 	 */
 	#handleResult(plugInfo,attrib,state,expression,updateIndex,performMatch,updateDependents,result){
@@ -548,8 +548,8 @@ export class pluginIf {
 	 * 
 	 * On error, a warning is logged and `false` is returned.
 	 * 
-	 * @param {*} matchValue - The value to be matched (usually the evaluated expression result)
-	 * @param {*} caseValue - The pattern/object against which `matchObj` is compared
+	 * @param {any} matchValue - The value to be matched (usually the evaluated expression result)
+	 * @param {any} caseValue - The pattern/object against which `matchObj` is compared
 	 * @returns {boolean} True if successful match occurred; otherwise, returns false
 	 * @private
 	 */
