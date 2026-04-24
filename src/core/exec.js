@@ -17,10 +17,6 @@ import {
 
 const frozenNullObj=Object.freeze(Object.create(null));
 
-/**
- * execExpression options defaults.
- * @template {object} execExpOptions
- */
 const execExpOptionsDefaults = {
 	argument: null,
 	useReturn: false,
@@ -37,19 +33,19 @@ const execExpOptionsDefaults = {
 	useSignalProxy: false
 };
 
-/**
- * execExpression buildExp result.
- * @typedef {object} execExpInstance
- * @prop {null|any} result
- * @prop {object} firstScope
- * @prop {Function} function
- * @prop {Function} runFn
- * @prop {Error|any} logFnError
- * @prop {Set<object>} getScopes
- * @prop {Set<object>} setScopes
- * @prop {execExpressionProxy|any} proxy
- * @prop {execExpOptions} options
- */
+const execExpProxyDefaults = {
+	mainScopes: null,
+	getScopes: null,
+	setScopes: null,
+	scopeUseOwn: null,
+	silentHas: true,
+	globalObj: null,
+	globalsHide: null,
+	globalCatch: null,
+	scopeCtrl: null,
+	useSignalProxy: true,
+	unscopables: frozenNullObj,
+};
 
 /**
  * Build & Execute Expressions for ScopeDom.
@@ -108,7 +104,7 @@ export class execExpression {
 		if(globalsHide && throwGlobals) globalCatch = (key)=>{ throw new Error("Expression tried to access a global variable: "+key); };
 		if(argument?.length>0){ unscopables = { [argument]:true }; args.push(argument); }
 		let { getScopes, setScopes } = execExpression.#parseScopes(mainScopes,extraScopes);
-		let proxy = new execExpressionProxy({ mainScopes, getScopes, setScopes, scopeUseOwn, silentHas, globalObj, globalsHide, globalCatch, scopeCtrl, useSignalProxy, unscopables });
+		let proxy = new execExpressionProxy({ ...execExpProxyDefaults, mainScopes, getScopes, setScopes, scopeUseOwn, silentHas, globalObj, globalsHide, globalCatch, scopeCtrl, useSignalProxy, unscopables });
 		let fnCode = execExpression.#generateCode(expression,options,proxy.$attribute);
 		let fn, fnc = useAsync ? functionAsyncProto.constructor : functionProto.constructor;
 		let logFnError = (err)=>console.warn(`ScopeDom: Error on Expression: ${expression}\n`,err.message,'\n',{ expression, fnCode, function:fn, mainScopes, getScopes, setScopes, result:err });
@@ -136,24 +132,6 @@ export class execExpression {
 	}
 	
 }
-
-/**
- * Proxy default options.
- * @template {object} execExpProxyDefaults
- */
-const execExpProxyDefaults = {
-	mainScopes: null,
-	getScopes: null,
-	setScopes: null,
-	scopeUseOwn: null,
-	silentHas: true,
-	globalObj: null,
-	globalsHide: null,
-	globalCatch: null,
-	scopeCtrl: null,
-	useSignalProxy: true,
-	unscopables: frozenNullObj,
-};
 
 /**
  * ScopeDom Proxy for expression execution, used in with(proxy).

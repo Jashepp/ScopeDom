@@ -79,7 +79,7 @@ export class signalObserver {
 		if(this.isDeferring || this.isRecording) return;
 		if(this.isChanging || !this.signals.has(signal)) forceDefer = true;
 		let self=this;
-		function signalObserverListener(fn){ fn(self,signal,oldValue,newValue); };
+		function signalObserverListener(fn){ fn(self,signal,oldValue,newValue); }
 		function signalObserverTrigger(){
 			self.isDeferring = false;
 			if(self.isChanging || self.listeners.size===0) return;

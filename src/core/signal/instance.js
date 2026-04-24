@@ -1,6 +1,6 @@
 
 import {
-	noopFn, noopAsyncFn, deferFn,
+	noopFn, noopAsyncFn, deferFn, isPromise,
 	animFrameHelper, regexMatchAll, regexExec, regexTest,
 	elementNodeType, commentNodeType, textNodeType,
 	getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn,
@@ -29,14 +29,15 @@ export const signalSymb = Symbol('$signalInstance');
  */
 export class signalInstance {
 	
-	/** @type {signalController} */
-	#ctrl;
-	/** Internal values */
-	#_value; #_promise;
-	/** Internal flags */
-	#useWeakRef=false; #isObject=false; #isGetting=true;
-	/** Pull-based functionality */
-	#pendingPull=true; #pullListeners=new Set();
+	#ctrl = null;
+	#_value = null;
+	#_promise = null;
+	#useWeakRef = false;
+	#isObject = false;
+	#isGetting = true;
+	#pendingPull = true;
+	#pullListeners = new Set();
+	#handlingPromises = new WeakMap();
 	
 	/**
 	 * Constructs a new signalInstance.
@@ -49,6 +50,7 @@ export class signalInstance {
 		if(value instanceof Promise || typeof value?.then==="function" || value instanceof signalInstance) this.set(value);
 		else this.#setFn(value);
 		this.#isGetting = false;
+		Object.seal(this);
 	}
 	
 	/**
@@ -132,9 +134,15 @@ export class signalInstance {
 	 * @param {boolean} [pending=false] - Defer change notification
 	 * @param {any} [oldValue] - The new value to set
 	 */
-	changed = function signalChanged(pending=false,oldValue=void 0){
-		if(oldValue===void 0) oldValue = this.#value;
+	changed = function signalChanged(oldValue=void 0){
 		this.#ctrl.triggerChange(this,oldValue,this.#value);
+	}
+	
+	#changedPromise = function signalChangedPromise(promise){
+		if(!this.#handlingPromises.has(promise)) return;
+		let oldValue = this.#handlingPromises.get(promise);
+		if(promise===this.#promise) this.changed(oldValue);
+		this.#handlingPromises.delete(promise);
 	}
 	
 	/**
@@ -150,7 +158,7 @@ export class signalInstance {
 	get = function signalGet(){
 		if(this.#isGetting) return this.#value;
 		this.#isGetting = true;
-		this.#ctrl.triggerRecording(this);
+		this.record();
 		if(this.#pendingPull) for(let listener of this.#pullListeners) try{ listener(); }catch(err){ console.error(err); }
 		this.#isGetting = false;
 		return this.#value;
@@ -160,22 +168,26 @@ export class signalInstance {
 	 * Sets the signal value and notifies all observers that has this signal recorded.
 	 * @param {any} v - The new value to set
 	 */
-	set = function signalSet(v){
-		if(v instanceof signalInstance) v = v.get();
-		let oldValue = this.#value, newValue = v;
-		if(oldValue===newValue) return;
-		let oldPromise = this.#promise, isPromise = (v instanceof Promise || ('then' in Object(v) && typeof v?.then==="function"));
-		if(isPromise){
-			if(oldPromise===newValue) return;
-			this.#setFn(newValue);
-			this.#promise = newValue;
-			newValue.then(this.changed.bind(this,false,oldValue),this.changed.bind(this,false,oldValue));
+	set = function signalSet(value){
+		if(value instanceof signalInstance) value = value.get();
+		let oldValue = this.#value;
+		if(oldValue===value) return false;
+		if(isPromise(value)){
+			if(this.#promise===value) return false;
+			this.#setFn(value);
+			this.#promise = value;
+			if(!this.#handlingPromises.has(value)){
+				let boundFn = this.#changedPromise.bind(this,value);
+				value.then(boundFn,boundFn);
+			}
+			this.#handlingPromises.set(value,oldValue);
 		}
 		else {
-			if(oldPromise!==void 0) this.#promise = void 0;
-			this.#setFn(newValue);
-			this.changed(false,oldValue);
+			if(this.#promise!==void 0) this.#promise = void 0;
+			this.#setFn(value);
+			this.changed(oldValue);
 		}
+		return true;
 	}
 	
 	/**
@@ -186,7 +198,7 @@ export class signalInstance {
 	 * @param {any} v - The new value to set
 	 */
 	get value(){ return this.get(); }
-	set value(v){ this.set(v); }
+	set value(value){ this.set(value); }
 	
 	/**
 	 * Returns the signal's value as a string.
@@ -228,7 +240,7 @@ export class signalInstance {
 	 * @param {Function} [rej=void 0] - Promise Reject callback
 	 * @returns {Promise} A Promise that resolves with the signal's value
 	 */
-	then(res,rej=void 0){ return Promise.resolve(this.get()).then(res,rej); }
+	then(resolve,reject=void 0){ return Promise.resolve(this.get()).then(resolve,reject); }
 	
 	/**
 	 * Returns the string tag for the signal.

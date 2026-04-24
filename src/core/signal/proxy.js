@@ -19,7 +19,8 @@ import { signalController } from "./controller.js";
 import { signalObserver } from "./observer.js";
 import { signalInstance, signalSymb } from "./instance.js";
 
-const spProxyMap = new WeakMap(), spTargetMap = new WeakMap();
+const spProxyMap = new WeakMap();
+const spTargetMap = new WeakMap();
 
 /**
  * SignalProxy - Creates a deep reactive proxy for objects with automatic signal tracking.
@@ -162,41 +163,44 @@ export class signalProxy {
 		let { target, targetSignal, signalCtrl, isIterable } = obj;
 		if(isIterable && targetSignal){
 			if(prop===Symbol.iterator) targetSignal.record(); // TODO - wrapper
-			else if(prop*1>=0) targetSignal.record();
+			else if(prop>=0) targetSignal.record(); // Index props are strings
 			else if(target instanceof Array && prop==='length') targetSignal.record();
 			else if(target instanceof Map && prop==='size') targetSignal.record();
 			else if(target instanceof Set && prop==='size') targetSignal.record();
 		}
-		if(typeof getValue!=='function') return [ getValue, false ];
-		let wrapRecordFn, wrapChangeFn;
-		if(target instanceof Object && prop==='valueOf') wrapRecordFn = true;
-		else if(isIterable && target instanceof Array && hasOwn(Array.prototype,prop)){
-			if(['pop','push','reverse','shift','unshift','splice','sort','copyWithin','fill'].indexOf(prop)!==-1) wrapChangeFn = true;
-			else wrapRecordFn = true;
+		if(typeof getValue==='function' && targetSignal){
+			let wrapRecordFn, wrapChangeFn;
+			if(target instanceof Object && prop==='valueOf') wrapRecordFn = true;
+			else if(isIterable){
+				if(target instanceof Array && hasOwn(Array.prototype,prop)){
+					if(['pop','push','reverse','shift','unshift','splice','sort','copyWithin','fill'].indexOf(prop)!==-1) wrapChangeFn = true;
+					else wrapRecordFn = true;
+				}
+				else if(target instanceof Map && hasOwn(Map.prototype,prop)){
+					if(['clear','delete','set','getOrInsert','getOrInsertComputed'].indexOf(prop)!==-1) wrapChangeFn = true;
+					else wrapRecordFn = true;
+				}
+				else if(target instanceof Set && hasOwn(Set.prototype,prop)){
+					if(['add','clear','delete'].indexOf(prop)!==-1) wrapChangeFn = true;
+					else wrapRecordFn = true;
+				}
+				else if(target instanceof WeakMap && hasOwn(WeakMap.prototype,prop)){
+					if(['delete','set','getOrInsert','getOrInsertComputed'].indexOf(prop)!==-1) wrapChangeFn = true;
+					else wrapRecordFn = true;
+				}
+				else if(target instanceof WeakSet && hasOwn(WeakSet.prototype,prop)){
+					if(['add','delete'].indexOf(prop)!==-1) wrapChangeFn = true;
+					else wrapRecordFn = true;
+				}
+			}
+			if(wrapChangeFn) return [ function signalProxyFnWrapperChange(...args){
+				let result = signalProxy.apply({ target:getValue, targetSignal, signalCtrl },target,args);
+				return targetSignal.changed(), result;
+			}, true ];
+			else if(wrapRecordFn) return [ function signalProxyFnWrapperRecord(...args){
+				return signalProxy.apply({ target:getValue, targetSignal, signalCtrl },target,args);
+			}, true ];
 		}
-		else if(isIterable && target instanceof Map && hasOwn(Map.prototype,prop)){
-			if(['clear','delete','set','getOrInsert','getOrInsertComputed'].indexOf(prop)!==-1) wrapChangeFn = true;
-			else wrapRecordFn = true;
-		}
-		else if(isIterable && target instanceof Set && hasOwn(Set.prototype,prop)){
-			if(['add','clear','delete'].indexOf(prop)!==-1) wrapChangeFn = true;
-			else wrapRecordFn = true;
-		}
-		else if(isIterable && target instanceof WeakMap && hasOwn(WeakMap.prototype,prop)){
-			if(['delete','set','getOrInsert','getOrInsertComputed'].indexOf(prop)!==-1) wrapChangeFn = true;
-			else wrapRecordFn = true;
-		}
-		else if(isIterable && target instanceof WeakSet && hasOwn(WeakSet.prototype,prop)){
-			if(['add','delete'].indexOf(prop)!==-1) wrapChangeFn = true;
-			else wrapRecordFn = true;
-		}
-		if(wrapChangeFn) return [ function signalProxyFnWrapperChange(...args){
-			let result = signalProxy.apply({ target:getValue, targetSignal, signalCtrl },target,args);
-			return targetSignal.changed(), result;
-		}, true ];
-		else if(wrapRecordFn) return [ function signalProxyFnWrapperRecord(...args){
-			return signalProxy.apply({ target:getValue, targetSignal, signalCtrl },target,args);
-		}, true ];
 		return [ getValue, false ];
 	}
 	
@@ -213,7 +217,7 @@ export class signalProxy {
 	static _handleTypesSet(obj,prop,getValue,value){
 		let { target, targetSignal, isIterable } = obj;
 		if(isIterable && targetSignal && target instanceof Array && prop==='length') targetSignal.changed();
-		else if(isIterable && targetSignal && prop*1>=0) targetSignal.changed();
+		else if(isIterable && targetSignal && prop>=0) targetSignal.changed(); // Index props are strings
 		return value;
 	}
 	

@@ -2,7 +2,10 @@
 export function noopFn(){};
 export async function noopAsyncFn(){};
 
-export const deferFn = Promise.prototype.then.bind(Promise.resolve());
+export const resolvedPromise = Promise.resolve();
+export const deferFn = Promise.prototype.then.bind(resolvedPromise);
+export function isPromise(value){ return value instanceof Promise || ('then' in Object(value) && typeof value?.then==="function"); }
+
 export const { getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn } = Object;
 
 // Call multiple callbacks on Animation Frame
