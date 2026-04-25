@@ -198,7 +198,7 @@ export class signalProxy {
 		let { target, targetSignal, signalCtrl, isIterable } = obj;
 		if(isIterable && targetSignal){
 			if(prop===Symbol.iterator) targetSignal.record();
-			else if(prop>=0) targetSignal.record(); // Index props are strings
+			else if(typeof prop==="string" && prop>=0) targetSignal.record(); // Index props are strings
 			else if(target instanceof Array && prop==='length') targetSignal.record();
 			else if(target instanceof Map && prop==='size') targetSignal.record();
 			else if(target instanceof Set && prop==='size') targetSignal.record();
@@ -258,7 +258,7 @@ export class signalProxy {
 	static _handleTypesSet(obj,prop,getValue,value){
 		let { target, targetSignal, isIterable } = obj;
 		if(isIterable && targetSignal && target instanceof Array && prop==='length') targetSignal.changed();
-		else if(isIterable && targetSignal && prop>=0) targetSignal.changed(); // Index props are strings
+		else if(isIterable && targetSignal && typeof prop==="string" && prop>=0) targetSignal.changed(); // Index props are strings
 		return value;
 	}
 	

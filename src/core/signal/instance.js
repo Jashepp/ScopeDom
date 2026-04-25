@@ -19,7 +19,11 @@ import { signalController } from "./controller.js";
 import { signalObserver } from "./observer.js";
 import { signalProxy, resolveSignal } from "./proxy.js";
 
+/** @type {Symbol} Used to store signalInstance on descriptors */
 export const signalSymb = Symbol('$signalInstance');
+
+/** @type {WeakMap<object>} WeakMap / Cache of signals to re-use existing instances */
+const signalsMap = new WeakMap();
 
 /**
  * Signal Instance that represents a reactive signal value.
@@ -78,11 +82,20 @@ export class signalInstance {
 	 * @param {boolean} [useWeakRef=false] - Use WeakRef for object values
 	 */
 	constructor(signalCtrl,value,useWeakRef=false){
+		let isPrimitive = value!==Object(value);
+		// Check weakmap / cache to re-use existing signal
+		if(!isPrimitive && signalsMap.has(value)) return signalsMap.get(value); 
+		// Re-use existing signal if value is a signalProxy or signalInstance
+		let resolved = resolveSignal(value,null,true);
+		if(resolved instanceof signalInstance) return resolved;
+		// Cofigure new signal
 		this.#ctrl = signalCtrl; this.#useWeakRef = useWeakRef && !!window.WeakRef;
 		if(value instanceof Promise || typeof value?.then==="function" || value instanceof signalInstance) this.set(value);
 		else this.#setFn(value);
 		this.#isGetting = false;
 		Object.seal(this);
+		// If non-primitive, add signal to weakmap / cache
+		if(!isPrimitive) signalsMap.set(value,this);
 	}
 	
 	/**
@@ -342,7 +355,7 @@ export class signalInstance {
 	 * 
 	 * @returns {Iterator} An iterator for the signal's value, or undefined if value[Symbol.iterator] doesn't exist
 	 */
-	[Symbol.iterator](){ return this.get()?.[Symbol.iterator]?.(); }
+	[Symbol.iterator](){ return Iterator.from ? Iterator.from(this.get()) : this.get()?.[Symbol.iterator]?.(); }
 	
 	/**
 	 * Converts the signal's value to a primitive type.

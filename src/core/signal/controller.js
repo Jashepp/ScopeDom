@@ -128,7 +128,6 @@ export class signalController {
 	 * @throws {TypeError} If signal is not a signalInstance instance
 	 */
 	triggerChange(signal,oldValue,newValue){
-		if(oldValue===void 0 && oldValue===newValue) oldValue = newValue = signal.getSilent();
 		if(!(signal instanceof signalInstance)) throw new TypeError("triggerChange signal must be a signalInstance");
 		if(!this.#preventUpdates) for(let observer of this.#observers) if(observer.hasSignal(signal)) observer.triggerChange(signal,oldValue,newValue);
 	}
@@ -276,17 +275,17 @@ export class signalController {
 	 */
 	computeSignalPush(fn,options={}){
 		if(!(fn instanceof Function)) throw new TypeError("computeSignalPush fn must be a Function (callback)");
-		let signal = options?.signal || this.createSignal(void 0);
+		let computeSignal = options?.signal || this.createSignal(void 0);
 		let obs = this.createObserver(options);
-		obs.signalsIgnore.add(signal);
+		obs.signalsIgnore.add(computeSignal);
 		let recordingFn = this.isolateRecording(obs.wrapRecorder(fn));
 		let runFn = function signalComputePushFn(){
 			obs.clearSignals();
-			signal.set(recordingFn());
+			computeSignal.set(recordingFn());
 		};
 		obs.addListener(runFn);
 		try{ runFn(obs,null); } catch(err){ console.error(err); }
-		let result = [ signal, obs, obs.clear.bind(obs) ];
+		let result = [ computeSignal, obs, obs.clear.bind(obs) ];
 		if(Symbol.dispose) result[Symbol.dispose] = result[2];
 		return result;
 	}
@@ -305,25 +304,25 @@ export class signalController {
 	 */
 	computeSignalPull(fn,options={}){
 		if(!(fn instanceof Function)) throw new TypeError("computeSignalPull fn must be a Function (callback)");
-		let signal = options?.signal || this.createSignal(void 0);
+		let computeSignal = options?.signal || this.createSignal(void 0);
 		let obs = this.createObserver(options);
-		obs.signalsIgnore.add(signal);
+		obs.signalsIgnore.add(computeSignal);
 		let isUpdating = false;
-		let updateFn = function signalUpdate(){
+		let updateFn = function signalUpdate(depObserver,depSignal,oldValue,newValue){
 			if(isUpdating) return;
 			isUpdating = true;
-			signal.invalidatePull();
-			signal.changed(true);
+			computeSignal.invalidatePull();
+			computeSignal.changed(oldValue);
 			isUpdating = false;
 		};
 		let recordingFn = this.isolateRecording(obs.wrapRecorder(fn));
-		signal.addPullListener(function signalComputePullFn(){
+		computeSignal.addPullListener(function signalComputePullFn(){
 			obs.clearSignals();
-			signal.set(recordingFn());
+			computeSignal.set(recordingFn());
 		});
 		obs.addListener(updateFn);
-		signal.invalidatePull();
-		let result = [ signal, obs, obs.clear.bind(obs) ];
+		computeSignal.invalidatePull();
+		let result = [ computeSignal, obs, obs.clear.bind(obs) ];
 		if(Symbol.dispose) result[Symbol.dispose] = result[2];
 		return result;
 	}
@@ -387,7 +386,7 @@ export class signalController {
 			let get = ()=>(signal.record(),proxy), set = (v)=>(this.defineProxySignal(obj,prop,v,signal,true),true);
 			get[signalSymb] = set[signalSymb] = signal;
 			defineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
-			signal.record(); signal.set(proxy)
+			signal.record(); signal.set(proxy);
 			return proxy;
 		}
 		else {
@@ -396,6 +395,7 @@ export class signalController {
 			get[signalSymb] = set[signalSymb] = signal;
 			defineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
 			signal.record(); signal.set(value);
+			return value;
 		}
 	}
 	
