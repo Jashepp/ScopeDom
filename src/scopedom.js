@@ -397,7 +397,7 @@ class ScopeDom {
 		if(name===null){
 			let scope = this.scopeCtrl.scope, { globalContext, signalProxyAll } = this.options;
 			let setScopes=new Set(); for(let s=scope; s && s!==Object; s=getPrototypeOf(s)) setScopes.add(s); 
-			let proxy = new execExpressionProxy({ __proto__:null, mainScopes:[scope], getScopes:new Set([this.scopeCtrl.execContext,scope]), setScopes, silentHas:false, globalsHide:!globalContext, useSignalProxy:!!signalProxyAll });
+			let proxy = new execExpressionProxy({ __proto__:null, scopeCtrl:this.scopeCtrl, mainScopes:[scope], getScopes:new Set([this.scopeCtrl.execContext,scope]), setScopes, silentHas:false, globalsHide:!globalContext, useSignalProxy:!!signalProxyAll });
 			this.handleScopeCtrlFn(proxy,fn);
 		}
 		return this;
@@ -412,12 +412,11 @@ class ScopeDom {
 	 * @param {ScopeDomCtrlCallback} fn The controller function to execute
 	 */
 	handleScopeCtrlFn(proxy,fn){
-		let signal = this.scopeCtrl.$signal.bind(this.scopeCtrl); // signal(value) : [get,set,signal]
 		let signalCtrl = this.scopeCtrl.signalCtrl, signalMethods = Object.fromEntries(
-			['createSignal','defineSignal','assignSignals','computeSignal','proxySignal','defineProxySignal','preventUpdates','preventObservers']
+			['signal','createSignal','defineSignal','assignSignals','computeSignal','proxySignal','defineProxySignal','preventUpdates','preventObservers']
 			.map(k=>[k,signalCtrl[k].bind(signalCtrl)])
 		);
-		fn.apply(proxy,[{ scope:proxy, instance:this, controller:this.scopeCtrl, signal, ...signalMethods }]);
+		fn.apply(proxy,[{ scope:proxy, instance:this, controller:this.scopeCtrl, ...signalMethods }]);
 	}
 	
 	// Element Scanning & Watching
@@ -956,7 +955,7 @@ class ScopeDom {
 		let map = this.elementRelatedEventListeners;
 		if(map.has(element)){
 			let set = map.get(element);
-			for(let removeListener of set) removeListener();
+			for(let removeListener of set) try{ removeListener(); } catch(err){ console.error(err); }
 			map.delete(element);
 		}
 	}
@@ -1136,9 +1135,7 @@ class ScopeDom {
 						let raf = options.get('raf'), instant = options.get('instant'), pd = options.get('pd');
 						if(value?.length>0){
 							let self=this, { runFn:eventCB, firstScope } = this.elementExecExp(elementScopeCtrl,value,{ __proto__:null, $attribute },{ __proto__:null, run:false });
-							/**
-							 * @param {{ preventDefault: () => void; }} event
-							 */
+							/** @param {Event} event */
 							function eventListener(event){
 								if(pd) event.preventDefault();
 								firstScope.$event = event;

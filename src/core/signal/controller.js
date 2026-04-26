@@ -213,6 +213,16 @@ export class signalController {
 	/**
 	 * Creates a new signalInstance and records it to any recording observers.
 	 * 
+	 * This is similar to createSignal, except it returns an array with [ getter, setter, signalInstance ].
+	 * 
+	 * @param {any} [value] Initial signal value
+	 * @returns {Array<Function,Function,signalInstance>} [ getter, setter, signalInstance ]
+	 */
+	signal(value=void 0,useWeakRef=false){ let s=this.createSignal(value,useWeakRef); return [s.get.bind(s),s.set.bind(s),s]; }
+	
+	/**
+	 * Creates a new signalInstance and records it to any recording observers.
+	 * 
 	 * @param {any} value - Initial signal value (cannot be Array, Map, or Set)
 	 * @param {boolean} [useWeakRef=false] - Use WeakRef for the value. It must be referenced elsewhere otherwise it may vanish on a GC event
 	 * @returns {signalInstance} The created signal instance
@@ -231,7 +241,7 @@ export class signalController {
 	 * 
 	 * @param {object} obj - Target object to define the property on
 	 * @param {string} prop - Property name to define
-	 * @param {any} [value=void 0] - Initial signal value or existing signal instance
+	 * @param {signalInstance|any} [value=void 0] - Initial signal value or existing signal instance
 	 * @param {PropertyDescriptor|object} [descriptor={}] - Property descriptor options
 	 * @param {boolean} [useOriginal=true] - Use existing getter/setter
 	 * @returns {signalInstance} The created or provided signal instance

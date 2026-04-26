@@ -477,17 +477,19 @@ export class execExpressionProxy {
 	 * @returns {any} Property value
 	 */
 	static _getResolve = function execExpGetResolve(obj,target,prop,receiver=target){
-		let value = Reflect.get(target,prop,target);
-		if(obj.useSignalProxy && obj.scopeCtrl?.signalCtrl){
+		let value = Reflect.get(target,prop,target), signalCtrl = obj.scopeCtrl?.signalCtrl;
+		// If using signalProxy on all scopes & expressions
+		if(obj.useSignalProxy && signalCtrl){
 			let signal, descriptor = getOwnPropertyDescriptor(target,prop);
 			// Check if value or descriptor value is a signal
 			if(value instanceof signalInstance) signal = value;
 			else if(descriptor?.value instanceof signalInstance) signal = descriptor.value;
 			else if(descriptor?.get?.[signalSymb] instanceof signalInstance) signal = descriptor.get[signalSymb];
+			if(signal) return signal.get();
 			// If no signal, and value isn't primitive, create signalProxy for automatic reactive property access
 			if(descriptor?.configurable && !signal && value===Object(value)){
-				// This can modify existing scope data
-				return obj.scopeCtrl.signalCtrl.defineProxySignal(target,prop,value);
+				// This modifies existing scope data
+				return signalCtrl.defineProxySignal(target,prop,value);
 			}
 		}
 		return value;
@@ -509,10 +511,15 @@ export class execExpressionProxy {
 	 * @returns {boolean} True on success
 	 */
 	static _setResolve = function execExpSetResolve(obj,target,prop,value,receiver=target){
-		let descriptor = getOwnPropertyDescriptor(target,prop);
+		let descriptor = getOwnPropertyDescriptor(target,prop), signalCtrl = obj.scopeCtrl?.signalCtrl;
 		// If setter or value is a signal, delegate to signal's set method
 		if(descriptor?.set?.[signalSymb] instanceof signalInstance) return descriptor.set(value), true;
 		if(descriptor?.value instanceof signalInstance) return descriptor.value.set(value), true;
+		// If using signalProxy on all scopes & expressions
+		if(obj.useSignalProxy && signalCtrl && !descriptor){
+			let signal = new signalInstance(signalCtrl,value);
+			return signalCtrl.defineProxySignal(target,prop,value,signal,true), true;
+		}
 		// Otherwise, standard property set
 		return Reflect.set(target,prop,value,target);
 	}

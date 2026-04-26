@@ -272,7 +272,7 @@ export class scopeController {
 		this.execContext = new scopeControllerContext(this);
 		this.isDuringUpdate = false;
 		/** @type {signalController} */
-		this.signalCtrl = ScopeDomInstance?.scopeCtrl?.signalCtrl || parentCtrl?.signalCtrl || new signalController(this);
+		this.signalCtrl = this.ScopeDomInstance?.scopeCtrl?.signalCtrl || parentCtrl?.signalCtrl || new signalController(this);
 	}
 	
 	/**
@@ -428,14 +428,15 @@ export class scopeController {
 	}
 	
 	/**
-	 * Create new signal instance & record it immediately to any recording signal observers.
+	 * Create a new signalInstance and records it to any recording observers.
 	 * 
 	 * This is similar to $createSignal, except it returns an array with [ getter, setter, signalInstance ].
 	 * 
 	 * @param {any} [value] Initial signal value
+	 * @param {boolean} [useWeakRef=false] Use weak references
 	 * @returns {Array<Function,Function,signalInstance>} [ getter, setter, signalInstance ]
 	 */
-	$signal(value=void 0){ let s=this.signalCtrl.createSignal(value); return [s.get.bind(s),s.set.bind(s),s]; }
+	$signal(value=void 0,useWeakRef=false){ return this.signalCtrl.signal(value,useWeakRef); }
 	
 	/**
 	 * Create a new signal instance & record it immediately to any recording signal observers.
