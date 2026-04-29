@@ -1153,6 +1153,48 @@ class ScopeDom {
 						continue;
 					}
 				}
+				// Class Attribute
+				if(nameParts.length===1){
+					let [ name ] = nameParts;
+					if(name==='class' && value!==null){
+						let { attribute:$attribute } = attrib;
+						let obs = this.scopeCtrl.signalCtrl.createObserver();
+						let defaultClasses = element.getAttribute('class') ?? '';
+						let { runFn } = this.elementExecExp(elementScopeCtrl,value,{ __proto__:null, $attribute, $original:defaultClasses },{ __proto__:null, run:false, useReturn:true });
+						runFn = obs.wrapRecorder(runFn);
+						function computeAttribClass(){
+							obs.clearSignals();
+							let result = runFn();
+							// If array, simply append it after default classes
+							if(result instanceof Array || result instanceof Set){
+								let classList = Array.from(result).filter(k=>typeof k==='string' && k.length>0);
+								return defaultClasses+' '+classList.join(' ');
+							}
+							// If object or map, disable any existing classes if needed, and add new classes
+							else if(result instanceof Map || result===Object(result)){
+								let newClassList = new Set(defaultClasses.split(' '));
+								let classObj = Object.entries(result).filter(([k,v])=>typeof k==='string' && k.length>0);
+								for(let [k,v] of classObj){
+									if(!v && newClassList.has(k)) newClassList.delete(k);
+									else if(v) newClassList.add(k);
+								}
+								return Array.from(newClassList).join(' ');
+							}
+						};
+						function renderAttribClass(newClassName){
+							if(newClassName!==void 0) element.className = newClassName;
+						}
+						function updateAttribClass(){
+							timing.queueComputeThenRender(computeAttribClass,renderAttribClass);
+						}
+						queue.push(updateAttribClass);
+						obs.addListener(updateAttribClass);
+						this.registerElementRelatedEvent(element,obs.clear.bind(obs));
+						let removeListener = elementScopeCtrl.ctrl.$on('$update',updateAttribClass,{},true);
+						this.registerElementRelatedEvent(element,removeListener);
+						continue;
+					}
+				}
 				// Signal Attribute (lowercase keys)
 				if(nameParts.length===2){
 					let [ name, key ] = nameParts;
