@@ -168,7 +168,7 @@ export class pluginParse {
 				// Reconstruct the regex with the custom delimiters
 				expressionRegex = new RegExp(`(${start}(.*?)${end})`,'g');
 				// Validate the regex by checking it matches the expected format
-				let check = [...regexMatchAll(formattedResult,expressionRegex)];
+				let check = Array.from(regexMatchAll(formattedResult,expressionRegex));
 				if(!check || !check?.[0]){ console.warn('pluginParse: invalid format,',result,'('+start+'(.*?)'+end+')',expressionRegex,check,expressionOption?.attribute,element); return false; }
 				if(check?.[0]?.[1]!==formattedResult){ console.warn('pluginParse: invalid format,',expressionRegex,check,expressionOption?.attribute,element); return false; }
 				if(check?.[0]?.[2]!=='exp'){ console.warn('pluginParse: invalid format, missing exp,',expressionRegex,check,expressionOption?.attribute,element); return false; }
@@ -359,7 +359,7 @@ export class pluginParse {
 		let { parseTreeOption, parseTextOption, expressionRegex, safeBindOption, htmlBindOption } = options;
 		let targetNodes = new Set(), targetAttribs = new Set();
 		if(parseTreeOption || parseTextOption){
-			for(let childElement of [...targetNode.childNodes]){
+			for(let childElement of Array.from(targetNode.childNodes)){
 				if(this.instance.isElementIgnored(childElement,false)) continue; // $ignore
 				if(childElement.nodeType!==elementNodeType && childElement.nodeType!==textNodeType) continue;
 				if(childElement.shadowRoot || childElement.nodeName==='TEMPLATE' || childElement.nodeName==='SCRIPT' || childElement.nodeName==='STYLE') continue;
@@ -791,8 +791,16 @@ export class pluginParse {
 		// Result Types
 		result = resolveSignal(result,signalObs);
 		if(result instanceof Error) result = options.onError;
-		if(result instanceof NodeList){ let e=document.createDocumentFragment(); for(let n of [...result])e.appendChild(n); result=e; }
-		else if(result instanceof HTMLCollection){ let e=document.createDocumentFragment(); for(let n of [...result])e.appendChild(n); result=e; }
+		if(result instanceof NodeList){
+			let e = document.createDocumentFragment();
+			for(let n of Array.from(result)) e.appendChild(n);
+			result = e;
+		}
+		else if(result instanceof HTMLCollection){
+			let e = document.createDocumentFragment();
+			for(let n of Array.from(result)) e.appendChild(n);
+			result = e;
+		}
 		if(result instanceof Node){
 			let validNode = true;
 			for(let e=element; e; e=e.parentNode) if(e===result){ validNode=false; break; }

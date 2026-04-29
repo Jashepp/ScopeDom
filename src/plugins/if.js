@@ -124,7 +124,7 @@ export class pluginIf {
 		element.parentNode.insertBefore(document.createComment(' If-Move: '+element.cloneNode(false).outerHTML+' '),element);
 		let template = document.createElement('template');
 		template.content.appendChild(element.content.cloneNode(true));
-		for(let e of [...element.content.childNodes]) element.content.removeChild(e);
+		for(let e of Array.from(element.content.childNodes)) element.content.removeChild(e);
 		element.content.appendChild(template);
 		// Move attribs to inner template
 		element.removeAttribute(targetAttrib.attribute);
@@ -770,7 +770,7 @@ export class pluginIf {
 		// When showing, if no nodes are saved, clone them from the template element
 		if((resultChanged && nowShowing) && (!tplNodes || tplNodes.size===0)){
 			if(!tplNodes) tplNodes = state.tplNodes = new Set();
-			for(let n of [...element.content.cloneNode(true).childNodes]){
+			for(let n of Array.from(element.content.cloneNode(true).childNodes)){
 				tplNodes.add(n);
 				instance.elementScopeSetAlias(n,element);
 			}

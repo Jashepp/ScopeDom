@@ -237,7 +237,7 @@ export class pluginRepeat {
 			fromElement = element;
 			// Clone children to document fragment
 			elementChildren = document.createDocumentFragment();
-			for(let e of [...element.childNodes]) elementChildren.appendChild(e);
+			for(let e of Array.from(element.childNodes)) elementChildren.appendChild(e);
 			element.appendChild(anchorEnd=commentEnd);
 		}
 		// Create Anchors - Insert anchor comments into DOM
@@ -332,7 +332,7 @@ export class pluginRepeat {
 		mainTemplate = state.mainTemplate = document.createElement('template');
 		this.#stateMap.set(mainTemplate,state);
 		if(includeNodeOption) mainTemplate.content.appendChild(newElement);
-		else for(let e of [...newElement.childNodes]) mainTemplate.content.appendChild(e);
+		else for(let e of Array.from(newElement.childNodes)) mainTemplate.content.appendChild(e);
 		if(includeNodeOption){
 			setAttribute(mainTemplate,attribute,newElement.getAttribute(attribute)||'');
 			newElement.removeAttribute(attribute);
@@ -461,9 +461,9 @@ export class pluginRepeat {
 		// Convert list into entries [[key,value],...]: Normalize various data types (Map, Set, Array, iterable) to entries
 		let itemsArr = [], domArr = [], anchorArr = [], isArr=false;
 		if(execResult instanceof Map){ itemsArr=Object.entries(execResult); }
-		else if(execResult instanceof Set){ itemsArr=Object.entries([...execResult]); isArr=true; }
+		else if(execResult instanceof Set){ itemsArr=Object.entries(Array.from(execResult)); isArr=true; }
 		else if(execResult instanceof Array){ itemsArr=Object.entries(execResult); isArr=true; }
-		else if(Symbol.iterator in Object(execResult)){ itemsArr=Object.entries([...execResult]); isArr=true; }
+		else if(Symbol.iterator in Object(execResult)){ itemsArr=Object.entries(Array.from(execResult)); isArr=true; }
 		else if(Object(execResult)===execResult){ itemsArr=Object.entries(execResult); }
 		else { execResult=[]; itemsArr=[]; isArr=true; }
 		// Try to match old DOM/anchors to new items for reuse
@@ -548,7 +548,7 @@ export class pluginRepeat {
 			if(anchor && usedAnchors.has(anchor)) anchor = null;
 			// Dom Nodes - If no reusable nodes, clone from template
 			if(!nodes || nodes.length===0){
-				nodes = [...mainTemplate.content.cloneNode(true).childNodes];
+				nodes = Array.from(mainTemplate.content.cloneNode(true).childNodes);
 				// Alias node scopes to elementAnchor for cloned nodes
 				if(anchorStart.parentNode!==elementAnchor) for(let e of nodes) instance.elementScopeSetAlias(e,elementAnchor);
 			}
@@ -593,10 +593,10 @@ export class pluginRepeat {
 			for(let e of nodes) expectedDOM.add(e);
 		}
 		// Quick-Morph live DOM with expected DOM
-		let expectedArr=[...expectedDOM], foundDOM=new Set();
+		let expectedArr = Array.from(expectedDOM), foundDOM = new Set();
 		// Collect currently existing DOM nodes between anchors
 		for(let e=anchorStart.nextSibling; e && e!==anchorEnd; e=e.nextSibling) foundDOM.add(e);
-		let foundArr = [...foundDOM], fIndex=0, tmpFragment=document.createDocumentFragment();
+		let foundArr = Array.from(foundDOM), fIndex = 0, tmpFragment = document.createDocumentFragment();
 		// Iterate through expected DOM in order, reconciling with found DOM
 		for(let i=0,l=expectedArr.length; i<l; i++){
 			let expected = expectedArr[i];

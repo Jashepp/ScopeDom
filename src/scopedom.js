@@ -654,7 +654,7 @@ class ScopeDom {
 		if(element.nodeType!==elementNodeType || element.nodeName==='SCRIPT' || element.nodeName==='STYLE') return;
 		if(this.isElementIgnored(element,checkIgnoreParents)) return;
 		list.add(element);
-		if(element.childNodes && element.nodeName!=='TEMPLATE' && element.nodeName!=='svg' && !element.shadowRoot) for(let e of [...element.childNodes]) this.connectElementAndChildren(e,false,list);
+		if(element.childNodes && element.nodeName!=='TEMPLATE' && element.nodeName!=='svg' && !element.shadowRoot) for(let e of Array.from(element.childNodes)) this.connectElementAndChildren(e,false,list);
 		if(act) for(let e of list.values()) if(e.isConnected) this.connectElement(e);
 	}
 	
@@ -667,7 +667,7 @@ class ScopeDom {
 	 */
 	disconnectElementAndChildren(element,act=true,list=new Set()){ // Disconnect children before parent
 		if(this.isElementIgnored(element,true)) return;
-		if(element.childNodes) for(let e of [...element.childNodes]) this.disconnectElementAndChildren(e,false,list);
+		if(element.childNodes) for(let e of Array.from(element.childNodes)) this.disconnectElementAndChildren(e,false,list);
 		list.add(element);
 		if(act) for(let e of list.values()) if(!e.isConnected) this.disconnectElement(e);
 	}
@@ -1393,7 +1393,7 @@ class ScopeDom {
 	latePluginAdd_runConnect(plugin,element,act=true,list=new Set()){
 		if(!plugin || !this.plugins.init || !this.cacheConnectedNodes.has(element)) return;
 		list.add(element);
-		if(element.childNodes) for(let e of [...element.childNodes]) this.latePluginAdd_runConnect(plugin,e,false,list);
+		if(element.childNodes) for(let e of Array.from(element.childNodes)) this.latePluginAdd_runConnect(plugin,e,false,list);
 		if(act && plugin.onConnect){
 			let onConnect = plugin.onConnect.bind(plugin);
 			for(let e of list){

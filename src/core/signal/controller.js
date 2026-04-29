@@ -162,7 +162,7 @@ export class signalController {
 		if(!(fn instanceof Function)) throw new TypeError("isolateRecording fn must be a Function (callback)");
 		let self = this;
 		return function signalIsolatedRecording(...args){
-			let prev = [...self.#observersRecording];
+			let prev = Array.from(self.#observersRecording);
 			self.#observersRecording.clear();
 			let result; try{ result=fn(...args); }catch(err){ console.error(err); }
 			for(let observer of prev) self.#observersRecording.add(observer);

@@ -800,7 +800,7 @@ export class scopeElementController {
 		options = { __proto__:null, ...options, bubbles:false };
 		let emitChildren = (e,emitSelf=false)=>{
 			if(emitSelf) this.ctrl.$emitTarget(e,name,detail,options);
-			if(e?.childNodes?.length>0) for(let c of [...e.childNodes]) if(c.isConnected && c.parentNode===e) emitChildren(c,true);
+			if(e?.childNodes?.length>0) for(let c of Array.from(e.childNodes)) if(c.isConnected && c.parentNode===e) emitChildren(c,true);
 		};
 		emitChildren(this.element,emitSelf);
 	}

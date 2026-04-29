@@ -182,7 +182,7 @@ export class pluginCloak {
 	 * @returns {boolean} True if all specified plugins are registered
 	 */
 	#hasPlugins(...pluginNames){
-		let registeredNames = [...this.instance.plugins.register].filter(obj=>obj?.name?.length>0).map(obj=>obj.name);
+		let registeredNames = Array.from(this.instance.plugins.register).filter(obj=>obj?.name?.length>0).map(obj=>obj.name);
 		return pluginNames.every(name=>registeredNames.indexOf(name)!==-1);
 	}
 	
