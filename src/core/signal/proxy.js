@@ -7,7 +7,7 @@ import {
 	getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn,
 	objectProto, nodeProto, elementProto, functionProto, functionAsyncProto, nativeProtos, nativeConstructors,
 	isNative, scopeAllowed, defineWeakRef,
-	isElementLoaded, setAttribute, eventRegistry,
+	setAttribute, eventRegistry,
 } from "../utils.js";
 import {
 	timing,

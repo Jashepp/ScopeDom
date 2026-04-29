@@ -65,7 +65,7 @@ export class pluginCloak {
 		state.scope = {
 			$element:element, $anchor:null,
 			plugins: this.#hasPlugins.bind(this),
-			loaded: ScopeDom.isElementLoaded.bind(null,element,false,false),
+			loaded: instance.isElementLoaded.bind(instance,element,false,false),
 			ready: instance.isReady.bind(instance),
 		};
 		if(value===null || value==='') value = 'ready() && loaded()';
@@ -77,7 +77,7 @@ export class pluginCloak {
 		if(domSwap && element.nodeName!=='TEMPLATE'){
 			state.anchor = anchor = document.createComment(' Cloak-Anchor: '+element.cloneNode(false).outerHTML+' ');
 			state.scope.$anchor = anchor;
-			state.scope.loaded = ScopeDom.isElementLoaded.bind(null,anchor,false,false),
+			state.scope.loaded = instance.isElementLoaded.bind(instance,anchor,false,false),
 			element.replaceWith(anchor);
 			this.#removeAttribs(element,attrib,attribOpts);
 			anchorScopeCtrl = state.anchorScopeCtrl = this.instance.elementScopeCtrl(anchor);

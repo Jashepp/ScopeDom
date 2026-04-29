@@ -36,7 +36,7 @@ export class pluginRepeat {
 	constructor(ScopeDom,instance){
 		this.ScopeDom = ScopeDom;
 		this.instance = instance;
-		this.isElementLoaded = ScopeDom.isElementLoaded;
+		this.isElementLoaded = instance.isElementLoaded.bind(instance);
 		this.#eventMap = new WeakMap(); // element, set (removeEvent cb)
 		this.#stateMap = new WeakMap(); // element, state
 		this.#afterElementDC = new WeakMap(); // element, cb

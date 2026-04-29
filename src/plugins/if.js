@@ -67,7 +67,7 @@ export class pluginIf {
 	constructor(ScopeDom,instance){
 		this.ScopeDom = ScopeDom;
 		this.instance = instance;
-		this.isElementLoaded = ScopeDom.isElementLoaded;
+		this.isElementLoaded = instance.isElementLoaded.bind(instance);;
 		this.#eventMap = new WeakMap(); // element, set (removeEvent cb)
 		this.#stateMap = new WeakMap(); // element, state
 		timing = ScopeDom.timing;

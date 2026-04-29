@@ -48,7 +48,7 @@ export class pluginParse {
 		timing = ScopeDom.timing;
 		resolveSignal = ScopeDom.resolveSignal;
 		regexMatchAll = ScopeDom.regexMatchAll;
-		isElementLoaded = ScopeDom.isElementLoaded;
+		isElementLoaded = instance.isElementLoaded.bind(instance);;
 		regexTest = ScopeDom.regexTest;
 		setUnion = ScopeDom.setUnion;
 	}

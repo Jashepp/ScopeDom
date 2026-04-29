@@ -50,23 +50,6 @@ export const defineWeakRef = (target,prop,value=target[prop])=>{
 	return target;
 };
 
-
-export const isElementLoaded = (()=>{
-	let domState=0, listener = ()=>{
-		if(document.readyState==='interactive') domState=1;
-		else if(document.readyState==='complete'){ domState=2; document.removeEventListener("readystatechange",listener); }
-	};
-	document.addEventListener("readystatechange",listener,{ capture:true, passive:true, once:false });
-	return function isElementLoaded(element,hasChildNodes=false,partial=false){
-		if(partial && domState===1) return true;
-		else if(domState===2) return true;
-		if(element.nodeType===textNodeType && element.nextSibling && element.nextSibling.nodeType!==textNodeType) return true;
-		if(hasChildNodes && (element?.childNodes?.length>0 || element?.content?.childNodes?.length>0)) return true;
-		for(let e=element; e; e=e.parentNode) if(e.nextSibling) return true;
-		return false;
-	};
-})();
-
 const setAttributeElement = document.createElement('template');
 export function setAttribute(target,name,value){ // Set attribute with less name limitations
 	try{ target.setAttribute(name,value); }

@@ -7,7 +7,7 @@ import {
 	getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn,
 	objectProto, nodeProto, elementProto, functionProto, functionAsyncProto, nativeProtos, nativeConstructors,
 	isNative, scopeAllowed, defineWeakRef,
-	isElementLoaded, setAttribute, eventRegistry,
+	setAttribute, eventRegistry,
 } from "./core/utils.js";
 import {
 	timing,
@@ -305,6 +305,8 @@ class ScopeDom {
 		this.mainElement = options.element || null;
 		/** @type {scopeController} The scope controller instance */
 		this.scopeCtrl = new scopeController(scope,null,null,false,this);
+		/** @type {eventRegistry} Event Registry */
+		this.eventRegistry = this.scopeCtrl.eventRegistry;
 		/** @type {Map} Named controllers map */
 		this.namedControllers = new Map();
 		/** @type {Map} Cache for DOM watchers */
@@ -439,17 +441,19 @@ class ScopeDom {
 	 */
 	watchDomTree(element){
 		if(this.cacheWatchObservers.has(element)) return;
-		let self=this, mutObs=new MutationObserver(function domWatching(muts){
-			let check=false;
-			for(let m of muts){
-				if(m.addedNodes.size>0) check=true;
-				for(let e of m.addedNodes) self.connectElementAndChildren(e,void 0,void 0,true);
-				for(let e of m.removedNodes) self.disconnectElementAndChildren(e);
-			}
-			if(check) this.checkPendingConnectElements();
-		});
+		let mutObs = new MutationObserver(this.#domTreeObserver.bind(this));
 		this.cacheWatchObservers.set(element,mutObs);
 		mutObs.observe(element,{ subtree:true, childList:true, attributes:false });
+	}
+	
+	#domTreeObserver(muts){
+		let check = false;
+		for(let m of muts){
+			if(m.addedNodes.size>0) check = true;
+			for(let e of m.addedNodes) this.connectElementAndChildren(e,void 0,void 0,true);
+			for(let e of m.removedNodes) this.disconnectElementAndChildren(e);
+		}
+		if(check) this.checkPendingConnectElements();
 	}
 	
 	/**
@@ -461,14 +465,23 @@ class ScopeDom {
 	 */
 	setReadyOnDomLoaded(){
 		if(document.readyState!=='loading') this.triggerOnReady(); // Do not delay this
-		let listener = function onDOMReadyStateChange(){
-			if(document.readyState==='interactive') this.triggerOnReady();
-			else if(document.readyState==='complete'){
-				document.removeEventListener("readystatechange",listener);
+		this.eventRegistry.add(document,'readystatechange',this.#boundOnDOMReadyStateChange,{ capture:true, passive:true, once:false });
+	}
+	
+	#domState = 0;
+	#boundOnDOMReadyStateChange = this.#onDOMReadyStateChange.bind(this);
+	#onDOMReadyStateChange(){
+		switch(document.readyState){
+			case 'interactive':
+				this.#domState = 1;
+				this.triggerOnReady();
+			break;
+			case 'complete':
+				this.#domState = 2;
+				this.eventRegistry.remove(document,'readystatechange',this.#boundOnDOMReadyStateChange);
 				this.triggerOnReady(true);
-			}
-		}.bind(this);
-		document.addEventListener("readystatechange",listener,{ capture:true, passive:true, once:false });
+			break;
+		}
 	}
 	
 	/**
@@ -501,56 +514,111 @@ class ScopeDom {
 	triggerOnReady(domComplete=false){
 		this.checkPendingConnectElements();
 		if(this.onReadyListeners){
-			let list = this.onReadyListeners.values();
-			this.onReadyListeners = null;
-			this.isDuringOnReady = true;
-			for(const cb of list) try{ cb(); }catch(err){ console.error(err); }
-			this.scopeCtrl.$emit("$update");
-			timing.deferTask(()=>{ this.isDuringOnReady=false; });
+			this.#handleOnReadyUpdate();
 		}
 		if(this.onDOMReadyListeners && domComplete){
-			let list = this.onDOMReadyListeners.values();
-			this.onDOMReadyListeners = null;
-			for(const cb of list) try{ cb(); }catch(err){ console.error(err); }
+			timing.deferTask(this.#handleOnReadyDOM.bind(this));
 		}
+	}
+	
+	#handleOnReadyUpdate(){
+		if(!this.onReadyListeners) return;
+		// Force next compute batch to run before animation frame
+		timing.deferNextCompute();
+		// Mark isDuringOnReady for instant calls
+		this.isDuringOnReady = true;
+		// Get on-ready listeners, disable list & execute listeners
+		let list = this.onReadyListeners.values();
+		this.onReadyListeners = null;
+		for(const fn of list) try{ fn(); }catch(err){ console.error(err); }
+		// Trigger $update for any plugins or applications that use it
+		this.scopeCtrl.$emit("$update");
+		// Force run compute queue to empty it
+		timing.queueCompute();
+		// Finish on-ready update
+		originalDefer(this.#endOnReady.bind(this));
+	}
+	
+	#handleOnReadyDOM(){
+		if(!this.onDOMReadyListeners) return;
+		let list = this.onDOMReadyListeners.values();
+		this.onDOMReadyListeners = null;
+		for(const fn of list) try{ fn(); }catch(err){ console.error(err); }
+	}
+	
+	#endOnReady(){
+		this.isDuringOnReady = false;
 	}
 	
 	/**
 	 * Listen for when the DOM is first interactive or complete.
 	 * 
-	 * @param {Function} cb Callback function to execute
+	 * If on-ready has passed, it defers the callback, or runs instantly (defer=false).
+	 * 
+	 * @param {Function} fn Callback function to execute
 	 * @param {boolean} [delay=true] Defer microtask or run instantly
 	 */
-	onReady(cb,delay=true){
-		if(this.onReadyListeners) this.onReadyListeners.add(cb);
-		else if(delay) timing.deferTask(cb);
-		else cb();
+	onReady(fn,delay=true){
+		if(this.onReadyListeners) this.onReadyListeners.add(fn);
+		else if(delay) timing.deferTask(fn);
+		else fn();
 	}
 	
 	/**
-	 * Listen for when the DOM is complete.
+	 * Listen for when the DOM is complete (after content such as scripts, css & images).
 	 * 
-	 * @param {Function} cb Callback function to execute
+	 * This is only used in specific situations.
+	 * Use {@link onReady} if you can instead.
+	 * 
+	 * If DOM-ready has passed, it defers the callback, or runs instantly (defer=false).
+	 * 
+	 * @param {Function} fn Callback function to execute
 	 * @param {boolean} [defer=true] Defer to microtask
 	 */
-	onDOMReady(cb,defer=true){
-		if(this.onDOMReadyListeners) this.onDOMReadyListeners.add(cb);
-		else if(defer) timing.deferTask(cb);
-		else cb();
+	onDOMReady(fn,defer=true){
+		if(this.onDOMReadyListeners) this.onDOMReadyListeners.add(fn);
+		else if(defer) timing.deferTask(fn);
+		else fn();
 	}
 	
 	/**
 	 * Register a callback to be called when an element is loaded.
 	 * 
 	 * @param {HTMLElement} element The element to watch
-	 * @param {Function} cb Callback function to execute when element is loaded
+	 * @param {Function} fn Callback function to execute when element is loaded
 	 */
-	onElementLoaded(element,cb){
-		if(isElementLoaded(element)) try{ cb(); }catch(err){ console.error(err); }
+	onElementLoaded(element,fn){
+		if(this.isElementLoaded(element)) try{ fn(); }catch(err){ console.error(err); }
 		else {
 			if(!this.pendingOnElementLoaded.has(element)) this.pendingOnElementLoaded.set(element,new Set());
-			this.pendingOnElementLoaded.get(element).add(cb);
+			this.pendingOnElementLoaded.get(element).add(fn);
 		}
+	}
+	
+	/**
+	 * Check if an element has been loaded into the DOM.
+	 * 
+	 * Logic:
+	 * - If element is not connected to dom, returns false.
+	 * - If DOM state is complete, it always returns true.
+	 * - If DOM state is interactive, and partial=true, returns true.
+	 * - If element is a text node, and it's next sibling is a non-text node, returns true.
+	 * - If hasChildNodes=true, and any child nodes exist, returns true.
+	 * - If element or any parent element has a next sibling node, returns true.
+	 * 
+	 * @param {HTMLElement} element The element
+	 * @param {boolean} hasChildNodes Check if the element has any children
+	 * @param {boolean} partial Allows DOM state 'interactive'
+	 * @returns {boolean} True/False
+	 */
+	isElementLoaded(element,hasChildNodes=false,partial=false){
+		if(!element.isConnected) return false;
+		if(partial && this.#domState===1) return true;
+		else if(this.#domState===2) return true;
+		if(element.nodeType===textNodeType && element.nextSibling && element.nextSibling.nodeType!==textNodeType) return true;
+		if(hasChildNodes && (element?.childNodes?.length>0 || element?.content?.childNodes?.length>0)) return true;
+		for(let e=element; e; e=e.parentNode) if(e.nextSibling) return true;
+		return false;
 	}
 	
 	/**
@@ -610,8 +678,8 @@ class ScopeDom {
 	 * @param {HTMLElement} element Connected element
 	 */
 	connectElement(element){
-		if(this.pendingConnectNodes.has(element) && !isElementLoaded(element,true)) return;
-		if(element!==this.mainElement && !isElementLoaded(element,true)){ this.pendingConnectNodes.add(element); return; }
+		if(this.pendingConnectNodes.has(element) && !this.isElementLoaded(element,true)) return;
+		if(element!==this.mainElement && !this.isElementLoaded(element,true)){ this.pendingConnectNodes.add(element); return; }
 		if(this.cacheConnectedNodes.has(element)) return;
 		this.cacheConnectedNodes.add(element);
 		this.pendingConnectNodes.delete(element);
@@ -633,8 +701,8 @@ class ScopeDom {
 	 * Check and connect pending elements that are now loaded.
 	 */
 	checkPendingConnectElements(){
-		for(let e of this.pendingConnectNodes) if(isElementLoaded(e,true)) this.connectElementAndChildren(e);
-		for(let [e,cbList] of this.pendingOnElementLoaded) if(isElementLoaded(e)){
+		for(let e of this.pendingConnectNodes) if(this.isElementLoaded(e,true)) this.connectElementAndChildren(e);
+		for(let [e,cbList] of this.pendingOnElementLoaded) if(this.isElementLoaded(e)){
 			for(let cb of cbList) try{ cbList.delete(cb); cb(); }catch(err){ console.error(err); }
 			this.pendingOnElementLoaded.delete(e);
 		}
@@ -1402,7 +1470,6 @@ class pluginOnElementExpression {
 Object.assign(ScopeDom,{
 	regexMatchAll, regexExec, regexTest,
 	setAttribute, setUnion,
-	isElementLoaded,
 	timing,
 	scopeInstance,
 	scopeBase,
