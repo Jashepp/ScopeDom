@@ -1,13 +1,17 @@
 
 import {
-	noopFn, noopAsyncFn, deferFn, isPromise,
-	animFrameHelper, regexMatchAll, regexExec, regexTest,
+	noopFn, noopAsyncFn, setUnion, disposeSymbol, isPromise,
+	microtaskCache, mtCacheGetDefinedProperty, mtCacheDefineProperty, mtCacheGetPrototypeOf, mtCacheSetPrototypeOf,
+	regexMatchAll, regexExec, regexTest, regexMatchAllFirstGroup,
 	elementNodeType, commentNodeType, textNodeType,
 	getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn,
 	objectProto, nodeProto, elementProto, functionProto, functionAsyncProto, nativeProtos, nativeConstructors,
 	isNative, scopeAllowed, defineWeakRef,
 	isElementLoaded, setAttribute, eventRegistry,
 } from "../utils.js";
+import {
+	timing,
+} from "../timing.js";
 import {
 	execExpression, execExpressionProxy,
 } from "../exec.js";
@@ -172,12 +176,10 @@ export class signalInstance {
 	 * The listener & observer can be deactivated by calling observer.clear().
 	 * 
 	 * @param {Function} fn - Listener callback function to invoke on signal changes
-	 * @param {boolean} [defer=this.#ctrl?.ScopeDomInstance?.options?.signalDefer] - Defers listener execution
 	 * @returns {signalObserver} The signal signalObserver instance
 	 */
-	subscribe(fn,defer=this.#ctrl?.ScopeDomInstance?.options?.signalDefer){
-		defer = defer===true || defer===void 0;
-		let obs = this.#ctrl.createObserver({ defer });
+	subscribe(fn){
+		let obs = this.#ctrl.createObserver();
 		obs.addListener(fn);
 		return obs;
 	}

@@ -1,13 +1,17 @@
 
 import {
-	noopFn, noopAsyncFn, deferFn,
-	animFrameHelper, regexMatchAll, regexExec, regexTest,
+	noopFn, noopAsyncFn, setUnion, disposeSymbol, isPromise,
+	microtaskCache, mtCacheGetDefinedProperty, mtCacheDefineProperty, mtCacheGetPrototypeOf, mtCacheSetPrototypeOf,
+	regexMatchAll, regexExec, regexTest, regexMatchAllFirstGroup,
 	elementNodeType, commentNodeType, textNodeType,
 	getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn,
 	objectProto, nodeProto, elementProto, functionProto, functionAsyncProto, nativeProtos, nativeConstructors,
 	isNative, scopeAllowed, defineWeakRef,
 	isElementLoaded, setAttribute, eventRegistry,
 } from "./utils.js";
+import {
+	timing,
+} from "./timing.js";
 import {
 	execExpression, execExpressionProxy,
 } from "./exec.js";
@@ -37,12 +41,12 @@ export class scopeInstance {
 	constructor(scopeObj,scopeCtrl){
 		let mainObj = this;
 		// If scopeObj has object prototype, change it
-		if(getPrototypeOf(scopeObj)===objectProto){
-			Object.setPrototypeOf(scopeObj,new scopeBase());
+		if(mtCacheGetPrototypeOf(scopeObj)===objectProto){
+			mtCacheSetPrototypeOf(scopeObj,new scopeBase());
 			mainObj = scopeObj;
 		}
 		// Otherwise, change prototype to scopeObj, making this instance inherit
-		else Object.setPrototypeOf(this,scopeObj);
+		else mtCacheSetPrototypeOf(this,scopeObj);
 		// Add methods
 		Object.defineProperties(mainObj,{
 			$scopeTop:{ __proto__:null, configurable:false, enumerable:!true, get(){ return scopeCtrl?.topCtrl?.scope||scopeCtrl?.parentCtrl?.topCtrl?.scope||scopeCtrl?.parentCtrl?.scope||scopeCtrl?.scope; } },
@@ -162,14 +166,14 @@ export class scopeControllerContext {
 	 * @param {string} [uniqueID] Unique ID for onceRAF deduplication
 	 * @returns {void}
 	 */
-	$emitRAF(name,detail=null,options=null,uniqueID=this.$attribute||'$emitRAF:scc'){ return animFrameHelper.onceRAF(this.$this||this[scSymb].scope,uniqueID+':'+name,()=>this[scSymb].$emit(name,detail,options)); };
+	$emitRAF(name,detail=null,options=null,uniqueID=this.$attribute||'$emitRAF:scc'){ return timing.onceAnimation(this.$this||this[scSymb].scope,uniqueID+':'+name,()=>this[scSymb].$emit(name,detail,options)); };
 	
 	/**
 	 * Request an animation frame callback.
 	 * 
 	 * @param {Function} cb Callback function to execute on next animation frame
 	 */
-	$onRAF(cb){ return animFrameHelper.requestAF(cb); };
+	$onRAF(cb){ return timing.requestAnimation(cb); };
 	
 	/**
 	 * Add a one-time animation frame callback.
@@ -179,7 +183,7 @@ export class scopeControllerContext {
 	 * @param {Function} cb Callback function to execute on next animation frame
 	 * @param {string} [uniqueID] Unique ID for onceRAF deduplication
 	 */
-	$onceRAF(cb,uniqueID=this.$attribute||'$onceRAF:scc'){ return animFrameHelper.onceRAF(this.$this||this[scSymb].scope,uniqueID,cb); };
+	$onceRAF(cb,uniqueID=this.$attribute||'$onceRAF:scc'){ return timing.onceAnimation(this.$this||this[scSymb].scope,uniqueID,cb); };
 	
 	/**
 	 * Remove an event listener from an element/EventTarget.
@@ -290,8 +294,8 @@ export class scopeController {
 			this.$emit(evt+':before'); this.$emit(evt); this.$emit(evt+':after');
 			this.isDuringUpdate = false;
 		};
-		if(animFrameHelper.isDuringRAF || this.ScopeDomInstance.isDuringOnReady || this.isDuringUpdate){ deferFn(emitUpdate); }
-		else animFrameHelper.onceRAF(this.scope,evt,emitUpdate,true);
+		if(timing.isDuringRAF || this.ScopeDomInstance.isDuringOnReady || this.isDuringUpdate){ timing.deferTask(emitUpdate); }
+		else timing.onceAnimation(this.scope,evt,emitUpdate,true);
 	}
 	
 	/**
@@ -645,14 +649,14 @@ export class scopeElementContext {
 	/**
 	 * Emit a DOM event on RAF (request animation frame) for this element.
 	 * 
-	 * This uses animFrameHelper.onceRAF() to deduplicate events by uniqueID, preventing multiple rapid emissions.
+	 * This uses timing.onceAnimation() to deduplicate events by uniqueID, preventing multiple rapid emissions.
 	 * 
 	 * @param {string} name Event name
 	 * @param {object} [detail=null] Event detail
 	 * @param {object} [options=null] Event options
 	 * @param {string} [uniqueID] Unique ID for onceRAF deduplication (default as $attribute or '$emitDomRAF:sec')
 	 */
-	$emitDomRAF(name,detail=null,options=null,uniqueID=this.$attribute||'$emitDomRAF:sec'){ return animFrameHelper.onceRAF(this[seSymb].element,uniqueID+':'+name,()=>this[seSymb].$emitDom(name,detail,options)); };
+	$emitDomRAF(name,detail=null,options=null,uniqueID=this.$attribute||'$emitDomRAF:sec'){ return timing.onceAnimation(this[seSymb].element,uniqueID+':'+name,()=>this[seSymb].$emitDom(name,detail,options)); };
 	
 }
 
@@ -710,12 +714,12 @@ export class scopeElementController {
 		let scopeUseOwn = new WeakSet();
 		// Track prototypes of main scopes so we can exclude them from otherScopes
 		let msProtoList = new Set();
-		for(let ms of mainScopes) for(let o=ms; o && scopeAllowed(o); o=getPrototypeOf(o)) msProtoList.add(o);
+		for(let ms of mainScopes) for(let o=ms; o && scopeAllowed(o); o=mtCacheGetPrototypeOf(o)) msProtoList.add(o);
 		// Track additional scopes, which gets passed into the expression builder as extraScopes
 		let otherScopes = new Set();
 		// Add extraScopes and their prototypes
 		if(extraScopes?.length>0){
-			for(let s of extraScopes) for(let o=s; o && scopeAllowed(o); o=getPrototypeOf(o)){
+			for(let s of extraScopes) for(let o=s; o && scopeAllowed(o); o=mtCacheGetPrototypeOf(o)){
 				if(!msProtoList.has(o) && !otherScopes.has(o)){
 					otherScopes.add(o);
 					scopeUseOwn.add(o);
@@ -725,7 +729,7 @@ export class scopeElementController {
 		// Add elementScopes & it's prototypes
 		if(elementScopes?.length>0) for(let [e,sArr] of elementScopes) for(let s of sArr){
 			// Add element scopes
-			for(let o=s; o && scopeAllowed(o); o=getPrototypeOf(o)){
+			for(let o=s; o && scopeAllowed(o); o=mtCacheGetPrototypeOf(o)){
 				if(!msProtoList.has(o) && !otherScopes.has(o)){
 					otherScopes.add(o);
 					scopeUseOwn.add(o);
@@ -734,7 +738,7 @@ export class scopeElementController {
 			// Add element controller scopes from the cached controllers for each element
 			let eScopeCtrl = instance?.cacheElementScopeCtrls.get(e);
 			if(eScopeCtrl){
-				for(let o=eScopeCtrl.scope; o && scopeAllowed(o); o=getPrototypeOf(o)){
+				for(let o=eScopeCtrl.scope; o && scopeAllowed(o); o=mtCacheGetPrototypeOf(o)){
 					if(!msProtoList.has(o) && !otherScopes.has(o)){
 						otherScopes.add(o);
 						scopeUseOwn.add(o);
@@ -778,8 +782,8 @@ export class scopeElementController {
 			this.$emitDomChildren(evt+':before',u,u,emitSelf); this.$emitDomChildren(evt,u,u,emitSelf); this.$emitDomChildren(evt+':after',u,u,emitSelf);
 			this.isDuringUpdateDom = false;
 		};
-		if(animFrameHelper.isDuringRAF){ deferFn(emitUpdate); }
-		else animFrameHelper.onceRAF(this.element,evt,emitUpdate,true);
+		if(timing.isDuringRAF){ timing.deferTask(emitUpdate); }
+		else timing.onceAnimation(this.element,evt,emitUpdate,true);
 	}
 	
 	/**

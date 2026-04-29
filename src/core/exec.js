@@ -1,13 +1,17 @@
 
 import {
-	noopFn, noopAsyncFn, deferFn,
-	animFrameHelper, regexMatchAll, regexExec, regexTest,
+	noopFn, noopAsyncFn, setUnion, disposeSymbol, isPromise,
+	microtaskCache, mtCacheGetDefinedProperty, mtCacheDefineProperty, mtCacheGetPrototypeOf, mtCacheSetPrototypeOf,
+	regexMatchAll, regexExec, regexTest, regexMatchAllFirstGroup,
 	elementNodeType, commentNodeType, textNodeType,
 	getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn,
 	objectProto, nodeProto, elementProto, functionProto, functionAsyncProto, nativeProtos, nativeConstructors,
 	isNative, scopeAllowed, defineWeakRef,
 	isElementLoaded, setAttribute, eventRegistry,
 } from "./utils.js";
+import {
+	timing,
+} from "./timing.js";
 import {
 	signalController, signalObserver, signalProxy, signalInstance, resolveSignal, signalSymb,
 } from "./signal.js";
@@ -163,7 +167,7 @@ export class execExpression {
 		if(!(extraScopes instanceof Set)) extraScopes = new Set(extraScopes);
 		let setScopes = new Set();
 		// Traverse prototype chain for each main scope, adding only allowed scopes
-		for(let ms of mainScopes) for(let s=ms; s && scopeAllowed(s); s=getPrototypeOf(s)) setScopes.add(s);
+		for(let ms of mainScopes) for(let s=ms; s && scopeAllowed(s); s=mtCacheGetPrototypeOf(s)) setScopes.add(s);
 		return { getScopes:extraScopes, setScopes };
 	}
 	
@@ -355,8 +359,8 @@ export class execExpressionProxy {
 	 * @returns {PropertyDescriptor|undefined} Property descriptor
 	 */
 	static getOwnPropertyDescriptor(obj,prop){
-		for(let s of obj.mainScopes) if(hasOwn(s,prop)) return Reflect.getOwnPropertyDescriptor(s,prop);
-		for(let s of obj.getScopes) if(hasOwn(s,prop)) return Reflect.getOwnPropertyDescriptor(s,prop);
+		for(let s of obj.mainScopes) if(hasOwn(s,prop)) return mtCacheGetDefinedProperty(s,prop);
+		for(let s of obj.getScopes) if(hasOwn(s,prop)) return mtCacheGetDefinedProperty(s,prop);
 		return void 0;
 	}
 	
@@ -373,8 +377,8 @@ export class execExpressionProxy {
 	 * @returns {boolean} True if property was defined
 	 */
 	static defineProperty(obj,prop,descriptor){
-		for(let s of obj.setScopes) if(hasOwn(s,prop)) return Reflect.defineProperty(s,prop,{ __proto__:null, ...descriptor });
-		for(let s of obj.mainScopes) return Reflect.defineProperty(s,prop,{ __proto__:null, ...descriptor });
+		for(let s of obj.setScopes) if(hasOwn(s,prop)) return mtCacheDefineProperty(s,prop,{ __proto__:null, ...descriptor });
+		for(let s of obj.mainScopes) return mtCacheDefineProperty(s,prop,{ __proto__:null, ...descriptor });
 		return false;
 	}
 	
@@ -451,7 +455,7 @@ export class execExpressionProxy {
 	 * @param {execExpressionProxy} obj Proxy options/state
 	 * @returns {object} Prototype
 	 */
-	static getPrototypeOf(obj){ return getPrototypeOf(obj.mainScopes[0]); }
+	static getPrototypeOf(obj){ return mtCacheGetPrototypeOf(obj.mainScopes[0]); }
 	
 	/**
 	 * Allow extensions.
@@ -480,7 +484,7 @@ export class execExpressionProxy {
 		let value = Reflect.get(target,prop,target), signalCtrl = obj.scopeCtrl?.signalCtrl;
 		// If using signalProxy on all scopes & expressions
 		if(obj.useSignalProxy && signalCtrl){
-			let signal, descriptor = getOwnPropertyDescriptor(target,prop);
+			let signal, descriptor = mtCacheGetDefinedProperty(target,prop);
 			// Check if value or descriptor value is a signal
 			if(value instanceof signalInstance) signal = value;
 			else if(descriptor?.value instanceof signalInstance) signal = descriptor.value;
@@ -511,7 +515,7 @@ export class execExpressionProxy {
 	 * @returns {boolean} True on success
 	 */
 	static _setResolve = function execExpSetResolve(obj,target,prop,value,receiver=target){
-		let descriptor = getOwnPropertyDescriptor(target,prop), signalCtrl = obj.scopeCtrl?.signalCtrl;
+		let descriptor = mtCacheGetDefinedProperty(target,prop), signalCtrl = obj.scopeCtrl?.signalCtrl;
 		// If setter or value is a signal, delegate to signal's set method
 		if(descriptor?.set?.[signalSymb] instanceof signalInstance) return descriptor.set(value), true;
 		if(descriptor?.value instanceof signalInstance) return descriptor.value.set(value), true;

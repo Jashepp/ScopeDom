@@ -1,13 +1,17 @@
 
 import {
-	noopFn, noopAsyncFn, deferFn,
-	animFrameHelper, regexMatchAll, regexExec, regexTest, regexMatchAllFirstGroup,
+	noopFn, noopAsyncFn, setUnion, disposeSymbol, isPromise, originalDefer,
+	microtaskCache, mtCacheGetDefinedProperty, mtCacheDefineProperty, mtCacheGetPrototypeOf, mtCacheSetPrototypeOf,
+	regexMatchAll, regexExec, regexTest, regexMatchAllFirstGroup,
 	elementNodeType, commentNodeType, textNodeType,
 	getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn,
 	objectProto, nodeProto, elementProto, functionProto, functionAsyncProto, nativeProtos, nativeConstructors,
 	isNative, scopeAllowed, defineWeakRef,
 	isElementLoaded, setAttribute, eventRegistry,
 } from "./core/utils.js";
+import {
+	timing,
+} from "./core/timing.js";
 import {
 	execExpression, execExpressionProxy,
 } from "./core/exec.js";
@@ -70,8 +74,6 @@ const initOptionsDefaults = {
 	privateInstance: false, // Enforces use of direct instance reference & prevent late plugins
 	/** @type {boolean} Allow late plugin addition */
 	allowLatePlugins: true, // Prevent pluginAdd after ScopeDom init (defaults to false on privateInstance)
-	/** @type {boolean} Defer signals */
-	signalDefer: true,
 	/** @type {boolean} Proxy all signals */
 	signalProxyAll: true,
 };
@@ -396,7 +398,7 @@ class ScopeDom {
 		// Default Controller
 		if(name===null){
 			let scope = this.scopeCtrl.scope, { globalContext, signalProxyAll } = this.options;
-			let setScopes=new Set(); for(let s=scope; s && s!==Object; s=getPrototypeOf(s)) setScopes.add(s); 
+			let setScopes=new Set(); for(let s=scope; s && s!==Object; s=mtCacheGetPrototypeOf(s)) setScopes.add(s); 
 			let proxy = new execExpressionProxy({ __proto__:null, scopeCtrl:this.scopeCtrl, mainScopes:[scope], getScopes:new Set([this.scopeCtrl.execContext,scope]), setScopes, silentHas:false, globalsHide:!globalContext, useSignalProxy:!!signalProxyAll });
 			this.handleScopeCtrlFn(proxy,fn);
 		}
@@ -474,7 +476,7 @@ class ScopeDom {
 	 */
 	setReadyOnRaf(){
 		if(!this.onReadyListeners) return;
-		animFrameHelper.onceRAF(this,'readyOnRaf',this.triggerOnReady.bind(this));
+		timing.onceAnimation(this,'readyOnRaf',this.triggerOnReady.bind(this));
 	}
 	
 	/**
@@ -504,7 +506,7 @@ class ScopeDom {
 			this.isDuringOnReady = true;
 			for(const cb of list) try{ cb(); }catch(err){ console.error(err); }
 			this.scopeCtrl.$emit("$update");
-			deferFn(()=>{ this.isDuringOnReady=false; });
+			timing.deferTask(()=>{ this.isDuringOnReady=false; });
 		}
 		if(this.onDOMReadyListeners && domComplete){
 			let list = this.onDOMReadyListeners.values();
@@ -521,7 +523,7 @@ class ScopeDom {
 	 */
 	onReady(cb,delay=true){
 		if(this.onReadyListeners) this.onReadyListeners.add(cb);
-		else if(delay) deferFn(cb);
+		else if(delay) timing.deferTask(cb);
 		else cb();
 	}
 	
@@ -533,7 +535,7 @@ class ScopeDom {
 	 */
 	onDOMReady(cb,defer=true){
 		if(this.onDOMReadyListeners) this.onDOMReadyListeners.add(cb);
-		else if(defer) deferFn(cb);
+		else if(defer) timing.deferTask(cb);
 		else cb();
 	}
 	
@@ -1057,9 +1059,9 @@ class ScopeDom {
 						if(value?.length>0){
 							let { runFn:connectCB } = this.elementExecExp(elementScopeCtrl,value,{ __proto__:null, $attribute },{ __proto__:null, run:false });
 							queue.push(function attribConnect(){
-								if(raf && !animFrameHelper.isDuringRAF) animFrameHelper.onceRAF(element,$attribute,connectCB);
+								if(raf && !timing.isDuringRAF) timing.onceAnimation(element,$attribute,connectCB);
 								else if(instant) connectCB();
-								else deferFn(connectCB);
+								else timing.deferTask(connectCB);
 							});
 							continue;
 						}
@@ -1139,10 +1141,10 @@ class ScopeDom {
 							function eventListener(event){
 								if(pd) event.preventDefault();
 								firstScope.$event = event;
-								if(animFrameHelper.isDuringRAF || self.isDuringOnReady) eventCB();
-								else if(raf) animFrameHelper.onceRAF(element,$attribute,eventCB);
+								if(timing.isDuringRAF || self.isDuringOnReady) eventCB();
+								else if(raf) timing.onceAnimation(element,$attribute,eventCB);
 								else if(instant) eventCB();
-								else deferFn(eventCB);
+								else timing.deferTask(eventCB);
 								if(pd) return false;
 							};
 							// Register events straight away
@@ -1181,9 +1183,9 @@ class ScopeDom {
 						let raf = options.get('raf'), instant = options.get('instant');
 						if(value?.length>0){
 							let { runFn:disconnectCB } = this.elementExecExp(elementScopeCtrl,value,{ __proto__:null, $attribute },{ __proto__:null, run:false });
-							if(raf && !animFrameHelper.isDuringRAF) animFrameHelper.requestAF(disconnectCB);
-							else if(instant || animFrameHelper.isDuringRAF) disconnectCB();
-							else deferFn(disconnectCB);
+							if(raf && !timing.isDuringRAF) timing.requestAnimation(disconnectCB);
+							else if(instant || timing.isDuringRAF) disconnectCB();
+							else timing.deferTask(disconnectCB); 
 							continue;
 						}
 					}
@@ -1398,10 +1400,10 @@ class pluginOnElementExpression {
 }
 
 Object.assign(ScopeDom,{
-	animFrameHelper,
 	regexMatchAll, regexExec, regexTest,
-	setAttribute,
+	setAttribute, setUnion,
 	isElementLoaded,
+	timing,
 	scopeInstance,
 	scopeBase,
 	execExpression,

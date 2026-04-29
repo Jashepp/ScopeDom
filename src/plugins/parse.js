@@ -11,6 +11,8 @@ let hasSetHTMLSupport = false;
 	hasSetHTMLSupport = 'setHTML' in e && typeof e.setHTML==='function';
 })();
 
+let timing, resolveSignal, regexMatchAll, isElementLoaded, regexTest, setUnion;
+
 /**
  * Plugin for parsing expressions within text nodes and attributes.
  * Supports features like text parsing, tree parsing, once-only execution,
@@ -43,6 +45,12 @@ export class pluginParse {
 		this.#parsedTextNodesSet = new WeakSet(); // only textNode
 		this.#childExcludeTextSet = new WeakSet(); // only child elements
 		this.#expressionRegexCache = new Map();
+		timing = ScopeDom.timing;
+		resolveSignal = ScopeDom.resolveSignal;
+		regexMatchAll = ScopeDom.regexMatchAll;
+		isElementLoaded = ScopeDom.isElementLoaded;
+		regexTest = ScopeDom.regexTest;
+		setUnion = ScopeDom.setUnion;
 	}
 	
 	/**
@@ -160,7 +168,7 @@ export class pluginParse {
 				// Reconstruct the regex with the custom delimiters
 				expressionRegex = new RegExp(`(${start}(.*?)${end})`,'g');
 				// Validate the regex by checking it matches the expected format
-				let check = [...this.ScopeDom.regexMatchAll(formattedResult,expressionRegex)];
+				let check = [...regexMatchAll(formattedResult,expressionRegex)];
 				if(!check || !check?.[0]){ console.warn('pluginParse: invalid format,',result,'('+start+'(.*?)'+end+')',expressionRegex,check,expressionOption?.attribute,element); return false; }
 				if(check?.[0]?.[1]!==formattedResult){ console.warn('pluginParse: invalid format,',expressionRegex,check,expressionOption?.attribute,element); return false; }
 				if(check?.[0]?.[2]!=='exp'){ console.warn('pluginParse: invalid format, missing exp,',expressionRegex,check,expressionOption?.attribute,element); return false; }
@@ -291,7 +299,7 @@ export class pluginParse {
 				if(intersection.intersectionRatio>0){ if(!previousVisibilityState){ state.isVisible=true; needsRescan=true; } }
 				else { if(previousVisibilityState){ state.isVisible=false; } }
 			}
-			if(needsRescan) this.ScopeDom.animFrameHelper.onceRAF(state.element,'pluginParse-onVisible',fn);
+			if(needsRescan) timing.onceAnimation(state.element,'pluginParse-onVisible',fn);
 		}.bind(this),{ __proto__:null, threshold:[0,0.05,0.5,0.95,1], rootMargin:"10px", });
 		intObs.observe(element);
 		this.#intersectionObserverMap.set(element,intObs);
@@ -310,7 +318,7 @@ export class pluginParse {
 		state.parsePending = false;
 		this.#runParseExpressions(state);
 		// If document is still loading & there's an element mid-dom-construction
-		if(state.nodesPending) this.ScopeDom.animFrameHelper.onceRAF(state.element,'pluginParse-nodesPending',this.#safelyScanAndParse.bind(this,state));
+		if(state.nodesPending) timing.onceAnimation(state.element,'pluginParse-nodesPending',this.#safelyScanAndParse.bind(this,state));
 		state.nodesPending = false;
 	}
 	
@@ -357,8 +365,8 @@ export class pluginParse {
 				if(childElement.shadowRoot || childElement.nodeName==='TEMPLATE' || childElement.nodeName==='SCRIPT' || childElement.nodeName==='STYLE') continue;
 				if(parseTextOption && childElement.nodeType===textNodeType){
 					if(parseNodes.has(childElement) || this.#parsedTextNodesSet.has(childElement)) continue;
-					if(!this.ScopeDom.isElementLoaded(childElement)){ state.nodesPending=true; continue; }
-					let hasExpressionMatch = this.ScopeDom.regexTest(childElement.data,expressionRegex);
+					if(!isElementLoaded(childElement)){ state.nodesPending=true; continue; }
+					let hasExpressionMatch = regexTest(childElement.data,expressionRegex);
 					if(hasExpressionMatch){
 						targetNodes.add(childElement);
 						state.parsePending = true;
@@ -384,27 +392,27 @@ export class pluginParse {
 					// Recursively search child nodes for parsing targets
 					let { targetNodes:childNodes, targetAttribs:childAttribs } = this.#locateParseTargets(childElement,state,isRecursive);
 					// Merge results
-					if(childNodes.size>0) targetNodes = targetNodes.union ? targetNodes.union(childNodes) : new Set([...targetNodes,...childNodes]);
-					if(childAttribs.size>0) targetAttribs = targetAttribs.union ? targetAttribs.union(childAttribs) : new Set([...targetAttribs,...childAttribs]);
+					if(childNodes.size>0) targetNodes = setUnion(targetNodes,childNodes);
+					if(childAttribs.size>0) targetAttribs = setUnion(targetAttribs,childAttribs);
 				}
 			}
 		}
 		if(!isRecursive){
 			if(attributeParseNames.size>0){
-				if(!this.ScopeDom.isElementLoaded(targetNode)) state.nodesPending=true;
+				if(!isElementLoaded(targetNode)) state.nodesPending=true;
 				for(let { name, value } of targetNode.attributes){
-					if(!attributeParseNames.has(name) || !this.ScopeDom.regexTest(value,expressionRegex)) continue;
+					if(!attributeParseNames.has(name) || !regexTest(value,expressionRegex)) continue;
 					if(attributeParseMap.get(targetNode)?.has(name)) continue;
 					targetAttribs.add({ __proto__:null, element:targetNode, name, value });
 					state.parsePending = true;
 				}
 			}
 			if(safeBindOption && !safeBindOption.ready){
-				if(!this.ScopeDom.isElementLoaded(targetNode)) state.nodesPending=true;
+				if(!isElementLoaded(targetNode)) state.nodesPending=true;
 				else { safeBindOption.ready=true; state.parsePending=true; }
 			}
 			else if(htmlBindOption && !htmlBindOption.ready){
-				if(!this.ScopeDom.isElementLoaded(targetNode)) state.nodesPending=true;
+				if(!isElementLoaded(targetNode)) state.nodesPending=true;
 				else { htmlBindOption.ready=true; state.parsePending=true; }
 			}
 		}
@@ -595,7 +603,7 @@ export class pluginParse {
 					exec = obj.exec = this.#executeExpression(element,node,exp,signalObs);
 					signalObs.addListener(function parseTextNode_signalObserver(){
 						let updateIndex = obj.updateIndex;
-						self.ScopeDom.animFrameHelper.onceRAF(node,signalObs,function parseTextNode_signalObserver_RAF(){
+						timing.onceAnimation(node,signalObs,function parseTextNode_signalObserver_RAF(){
 							if(obj.updateIndex!==updateIndex) return;
 							signalObs.clearSignals();
 							self.#updateTextNode(node,exec.runFn(),obj,state,updateIndex,signalObs);
@@ -618,7 +626,7 @@ export class pluginParse {
 					exec = obj.exec = this.#executeExpression(element,node,exp,signalObs);
 					signalObs.addListener(function parseAttribs_signalObserver(){
 						let updateIndex = obj.updateIndex;
-						self.ScopeDom.animFrameHelper.onceRAF(node,signalObs,function parseAttribs_signalObserver_RAF(){
+						timing.onceAnimation(node,signalObs,function parseAttribs_signalObserver_RAF(){
 							if(obj.updateIndex!==updateIndex) return;
 							signalObs.clearSignals();
 							self.#updateAttribute(node,name,exec.runFn(),obj,state,updateIndex,signalObs);
@@ -638,7 +646,7 @@ export class pluginParse {
 					exec = safeBindOption.exec = this.#executeExpression(element,element,exp,signalObs);
 					signalObs.addListener(function parseBindSafe_signalObserver(){
 						let updateIndex = safeBindOption.updateIndex;
-						self.ScopeDom.animFrameHelper.onceRAF(element,signalObs,function parseBindSafe_signalObserver_RAF(){
+						timing.onceAnimation(element,signalObs,function parseBindSafe_signalObserver_RAF(){
 							if(safeBindOption.updateIndex!==updateIndex) return;
 							signalObs.clearSignals();
 							self.#updateBind(element,false,exec.runFn(),safeBindOption,state,updateIndex,signalObs);
@@ -658,7 +666,7 @@ export class pluginParse {
 					exec = htmlBindOption.exec = this.#executeExpression(element,element,exp,signalObs);
 					signalObs.addListener(function parseBindHTML_signalObserver(){
 						let updateIndex = htmlBindOption.updateIndex;
-						self.ScopeDom.animFrameHelper.onceRAF(element,signalObs,function parseBindHTML_signalObserver_RAF(){
+						timing.onceAnimation(element,signalObs,function parseBindHTML_signalObserver_RAF(){
 							if(htmlBindOption.updateIndex!==updateIndex) return;
 							signalObs.clearSignals();
 							self.#updateBind(element,true,exec.runFn(),htmlBindOption,state,updateIndex,signalObs);
@@ -690,14 +698,14 @@ export class pluginParse {
 			}
 			let onSuccess = (result)=>this.#updateTextNode(node,result,obj,state,updateIndex,signalObs);
 			let onError = ()=>this.#updateTextNode(node,options.onError,obj,state,updateIndex,signalObs);
-			this.ScopeDom.animFrameHelper.promiseToRAF(result,onSuccess,onError);
+			timing.promiseToRAF(result,onSuccess,onError);
 			return;
 		}
 		// Ignore old calls
 		if(obj.updateIndex>updateIndex) return;
 		obj.updateIndex++;
 		// Result Types
-		result = this.ScopeDom.resolveSignal(result,signalObs);
+		result = resolveSignal(result,signalObs);
 		if(result instanceof Error) result = options.onError;
 		if(result instanceof Node){
 			let validNode = true;
@@ -741,11 +749,11 @@ export class pluginParse {
 	 */
 	#updateAttribute(element,attribute,result,obj,state,updateIndex,signalObs){
 		let { options } = state;
-		result = this.ScopeDom.resolveSignal(result,signalObs);
+		result = resolveSignal(result,signalObs);
 		if(result instanceof Promise){
 			let onSuccess = (result)=>this.#updateAttribute(element,attribute,result,obj,state,updateIndex,signalObs);
 			let onError = ()=>this.#updateAttribute(element,attribute,options.onError,obj,state,updateIndex,signalObs);
-			this.ScopeDom.animFrameHelper.promiseToRAF(result,onSuccess,onError);
+			timing.promiseToRAF(result,onSuccess,onError);
 			return;
 		}
 		// Ignore old calls
@@ -774,14 +782,14 @@ export class pluginParse {
 		if(result instanceof Promise){
 			let onSuccess = (result)=>this.#updateBind(element,isHTML,result,obj,state,updateIndex,signalObs);
 			let onError = ()=>this.#updateBind(element,isHTML,options.onError,obj,state,updateIndex,signalObs);
-			this.ScopeDom.animFrameHelper.promiseToRAF(result,onSuccess,onError);
+			timing.promiseToRAF(result,onSuccess,onError);
 			return;
 		}
 		// Ignore old calls
 		if(obj.updateIndex>updateIndex) return;
 		obj.updateIndex++;
 		// Result Types
-		result = this.ScopeDom.resolveSignal(result,signalObs);
+		result = resolveSignal(result,signalObs);
 		if(result instanceof Error) result = options.onError;
 		if(result instanceof NodeList){ let e=document.createDocumentFragment(); for(let n of [...result])e.appendChild(n); result=e; }
 		else if(result instanceof HTMLCollection){ let e=document.createDocumentFragment(); for(let n of [...result])e.appendChild(n); result=e; }

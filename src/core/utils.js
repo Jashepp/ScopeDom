@@ -1,49 +1,21 @@
 
+import {
+	timing,
+} from "./timing.js";
+
+const hasQueueMicrotask = typeof queueMicrotask==='function';
+export const resolvedPromise = Promise.resolve();
+export const originalDefer = hasQueueMicrotask ? queueMicrotask : Promise.prototype.then.bind(resolvedPromise);
+
 export function noopFn(){};
 export async function noopAsyncFn(){};
 
-export const resolvedPromise = Promise.resolve();
-export const deferFn = Promise.prototype.then.bind(resolvedPromise);
-export function isPromise(value){ return value instanceof Promise || ('then' in Object(value) && typeof value?.then==="function"); }
-
 export const { getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn } = Object;
 
-// Call multiple callbacks on Animation Frame
-let rAFList=new Set(), onceRAFList=new Map(), isDuringRAF=false, isScheduled=false;
-function scheduledRAF(){
-	isDuringRAF = true;
-	let list=[...rAFList.values()]; rAFList.clear();
-	for(let cb of list) try{ cb(); }catch(err){ console.error(err); }
-	let list2=[...onceRAFList.values()]; onceRAFList.clear();
-	for(let s of list2) for(let [k,cb] of s) try{ cb(); }catch(err){ console.error(err); }
-	isScheduled = false;
-	deferFn(()=>{ isDuringRAF=false; });
-}
+export function setUnion(setA,setB){ return Set.prototype.union ? setA.union(setB) : new Set([...setA,...setB]); };
+export const disposeSymbol = Symbol.dispose || Symbol.for('Symbol.dispose');
 
-// animUtils
-export class animFrameHelper {
-	static get isDuringRAF(){ return isDuringRAF; };
-	static get isScheduled(){ return isScheduled; };
-	static requestAF(cb){
-		rAFList.add(cb);
-		if(!isScheduled) isScheduled=requestAnimationFrame(scheduledRAF),true;
-	};
-	// Call one callback on Animation Frame, unique by obj+key. First cb only, unless useLast to use last cb called with
-	static onceRAF(obj,key,cb,useLast=true){
-		if(obj===void 0 || obj===null) obj = animFrameHelper.onceRAF;
-		if(key===void 0 || key===null) key = 0;
-		let list = onceRAFList.get(obj);
-		if(!list) onceRAFList.set(obj,(list=new Map()));
-		let hasCB = list.has(key);
-		if(useLast && hasCB) list.set(key,cb);
-		else if(!hasCB) list.set(key,cb);
-		if(!isScheduled) isScheduled=requestAnimationFrame(scheduledRAF),true;
-		return !hasCB; // True if fresh (first cb)
-	};
-	static promiseToRAF(p,cb,cbErr){
-		return p.then((r)=>animFrameHelper.requestAF(()=>cb(r)),(err)=>animFrameHelper.requestAF(cbErr?cbErr:()=>console.error(err)));
-	}
-}
+export function isPromise(value){ return value instanceof Promise || ('then' in Object(value) && typeof value?.then==="function"); };
 
 // regexUtils
 export function regexMatchAll(str,r){ return str.matchAll(r); } // matchAll clones regex, and doesn't need lastIndex=0
@@ -147,4 +119,72 @@ export class eventRegistry {
 		}
 		if(nameMap.size===0) this.map.delete(target);
 	}
+}
+
+
+let mtCacheWM = new WeakMap(), mtDeferring = false, mtDeferAgain = false;
+export class microtaskCache {
+	
+	static get(wmKey,key){
+		if(mtDeferring) mtDeferAgain = true;
+		return mtCacheWM.get(wmKey)?.get(key);
+	}
+	
+	static getOrCompute(wmKey,key,fn){
+		if(!mtCacheWM.has(wmKey)) mtCacheWM.set(wmKey,new Map());
+		if(mtCacheWM.get(wmKey).has(key)) return microtaskCache.get(wmKey,key);
+		if(mtDeferring) mtDeferAgain = true;
+		let value = fn(); microtaskCache.set(wmKey,key,value);
+		return value;
+	}
+	
+	static set(wmKey,key,value){
+		if(!mtCacheWM.has(wmKey)) mtCacheWM.set(wmKey,new Map());
+		mtCacheWM.get(wmKey).set(key,value);
+		if(!mtDeferring){
+			mtDeferring = true;
+			originalDefer(microtaskCache.#deferredCleanup);
+		}
+		else mtDeferAgain = true;
+		return value;
+	}
+	
+	static delete(wmKey,key){
+		if(mtCacheWM.get(wmKey)?.has(key)) mtCacheWM.get(wmKey).delete(key);
+	}
+	
+	static #deferredCleanup(){
+		if(!mtDeferring) return;
+		if(mtDeferAgain){
+			mtDeferAgain = false;
+			originalDefer(microtaskCache.#deferredCleanup);
+			return;
+		}
+		mtDeferring = false;
+		mtDeferAgain = false;
+		mtCacheWM = new WeakMap();
+	}
+	
+}
+
+export function mtCacheGetDefinedProperty(obj,prop){
+	let key = prop?.toString ? 'mtCachePropDesc:'+prop.toString() : prop;
+	return microtaskCache.getOrCompute(obj,key,_=>getOwnPropertyDescriptor(obj,prop));
+}
+
+export function mtCacheDefineProperty(obj,prop,options){
+	let result = defineProperty(obj,prop,options);
+	let key = prop?.toString ? 'mtCachePropDesc:'+prop.toString() : prop;
+	microtaskCache.delete(obj,key);
+	return result;
+}
+
+export function mtCacheGetPrototypeOf(obj){
+	return microtaskCache.getOrCompute(obj,'mtCacheGetProto',_=>getPrototypeOf(obj));
+}
+
+export function mtCacheSetPrototypeOf(obj,newProto){
+	let result = Object.setPrototypeOf(obj,newProto);
+	microtaskCache.delete(obj,'mtCacheGetProto');
+	return result;
 }

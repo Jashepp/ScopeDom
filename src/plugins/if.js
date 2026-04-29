@@ -36,6 +36,8 @@ const matchCaseScope = Object.freeze({
 	_not(...arr){ return matchCaseOperatorFn('not',arr); },
 });
 
+let timing, resolveSignal, setAttribute;
+
 /**
  * Plugin for conditional rendering based on expression evaluation.
  * 
@@ -68,6 +70,9 @@ export class pluginIf {
 		this.isElementLoaded = ScopeDom.isElementLoaded;
 		this.#eventMap = new WeakMap(); // element, set (removeEvent cb)
 		this.#stateMap = new WeakMap(); // element, state
+		timing = ScopeDom.timing;
+		resolveSignal = ScopeDom.resolveSignal;
+		setAttribute = ScopeDom.setAttribute;
 	}
 	
 	/**
@@ -123,18 +128,18 @@ export class pluginIf {
 		element.content.appendChild(template);
 		// Move attribs to inner template
 		element.removeAttribute(targetAttrib.attribute);
-		if(targetAttrib.value!==null) this.ScopeDom.setAttribute(template,targetAttrib.attribute,targetAttrib.value);
+		if(targetAttrib.value!==null) setAttribute(template,targetAttrib.attribute,targetAttrib.value);
 		for(let [n,opt] of targetAttrib.options){
 			if(opt.attribute) element.removeAttribute(opt.attribute);
 			// Apply options to the new template element
-			if(opt.attribute && !opt.isDefault && opt.value!==null) this.ScopeDom.setAttribute(template,opt.attribute,opt.value);
+			if(opt.attribute && !opt.isDefault && opt.value!==null) setAttribute(template,opt.attribute,opt.value);
 		}
 		if(attribs.has(fallbackAttribName)){
 			let defaultRepeat = attribs.get(fallbackAttribName);
-			if(defaultRepeat.value!==null) this.ScopeDom.setAttribute(template,defaultRepeat.attribute,defaultRepeat.value);
+			if(defaultRepeat.value!==null) setAttribute(template,defaultRepeat.attribute,defaultRepeat.value);
 			for(let [n,opt] of defaultRepeat.options){
 				if(opt.attribute) element.removeAttribute(opt.attribute);
-				if(opt.attribute && opt.value!==null && !template.hasAttribute(opt.attribute)) this.ScopeDom.setAttribute(template,opt.attribute,opt.value);
+				if(opt.attribute && opt.value!==null && !template.hasAttribute(opt.attribute)) setAttribute(template,opt.attribute,opt.value);
 			}
 		}
 	}
@@ -405,7 +410,7 @@ export class pluginIf {
 			let self=this; signalObs = state.signalObs = (signalObs || state.signalCtrl.createObserver());
 			signalObs.addListener(function pluginIf_signalObserver(){
 				let updateIndex = state.updateIndex;
-				self.ScopeDom.animFrameHelper.onceRAF(state,signalObs,function pluginIf_signalObserver_RAF(){
+				timing.onceAnimation(state,signalObs,function pluginIf_signalObserver_RAF(){
 					if(state.updateIndex!==updateIndex) return;
 					signalObs.clearSignals();
 					self.#runIfExpressions(plugInfo,attrib,state,expression,performMatch,true);
@@ -449,14 +454,14 @@ export class pluginIf {
 		// Ignore old results
 		if(state.updateIndex>updateIndex) return;
 		// Resolve Signal
-		result = this.ScopeDom.resolveSignal(result,signalObs);
+		result = resolveSignal(result,signalObs);
 		// If result is promise, use default & handleResult when settled
 		if(result instanceof Promise){
 			// Fallback / Default Value
 			this.#handleResult(plugInfo,attrib,state,expression,updateIndex,performMatch,false,defaultValue);
 			updateIndex = state.updateIndex;
 			// Handle Result
-			this.ScopeDom.animFrameHelper.promiseToRAF(result,this.#handleResult.bind(this,plugInfo,attrib,state,expression,updateIndex,false,true));
+			timing.promiseToRAF(result,this.#handleResult.bind(this,plugInfo,attrib,state,expression,updateIndex,false,true));
 			return;
 		}
 		// If the match result is a promise that contains a resolved value, ensure updates are propagated to other dependent elements
@@ -485,7 +490,7 @@ export class pluginIf {
 			}
 			matchResult = execMatch.result;
 			// Resolve Signal
-			execMatch.result = this.ScopeDom.resolveSignal(execMatch.result,signalObs);
+			execMatch.result = resolveSignal(execMatch.result,signalObs);
 			// Resolve Promise
 			if(execMatch.result instanceof Promise && Object.hasOwn(execMatch.result,matchCasePromiseResultSymbol)) matchResult = execMatch.result[matchCasePromiseResultSymbol];
 			if(execMatch.result instanceof Promise && execMatch.result?.[matchCasePromiseWaitSymbol]) matchResult = defaultValue;
@@ -494,14 +499,14 @@ export class pluginIf {
 				// console.log({ firstRun, performMatch, matchOnce });
 				matchResult = execMatch.result = execMatch.runFn();
 				// Resolve Signal
-				execMatch.result = this.ScopeDom.resolveSignal(execMatch.result,signalObs);
+				execMatch.result = resolveSignal(execMatch.result,signalObs);
 				// Resolve Promise
 				if(execMatch.result instanceof Promise && Object.hasOwn(execMatch.result,matchCasePromiseResultSymbol)) matchResult = execMatch.result[matchCasePromiseResultSymbol];
 				else if(execMatch.result instanceof Promise && execMatch.result?.[matchCasePromiseWaitSymbol]) matchResult = defaultValue;
 				else if(execMatch.result instanceof Promise){
 					matchResult = defaultValue;
 					execMatch.result[matchCasePromiseWaitSymbol] = true;
-					this.ScopeDom.animFrameHelper.promiseToRAF(execMatch.result,(pResult)=>{
+					timing.promiseToRAF(execMatch.result,(pResult)=>{
 						execMatch.result[matchCasePromiseWaitSymbol] = false;
 						execMatch.result[matchCasePromiseResultSymbol] = pResult;
 						this.#runIfExpressions(plugInfo,attrib,state,expression,false);
@@ -556,8 +561,8 @@ export class pluginIf {
 	#matchCase(matchValue,caseValue){
 		try{
 			// Resolve Signals
-			matchValue = this.ScopeDom.resolveSignal(matchValue);
-			caseValue = this.ScopeDom.resolveSignal(caseValue);
+			matchValue = resolveSignal(matchValue);
+			caseValue = resolveSignal(caseValue);
 			// Equals
 			if(matchValue===caseValue) return true;
 			if(typeof caseValue==='string' || typeof caseValue==='number' || typeof caseValue==='boolean') return false;

@@ -1,13 +1,17 @@
 
 import {
-	noopFn, noopAsyncFn, deferFn,
-	animFrameHelper, regexMatchAll, regexExec, regexTest,
+	noopFn, noopAsyncFn, setUnion, disposeSymbol, isPromise,
+	microtaskCache, mtCacheGetDefinedProperty, mtCacheDefineProperty, mtCacheGetPrototypeOf, mtCacheSetPrototypeOf,
+	regexMatchAll, regexExec, regexTest, regexMatchAllFirstGroup,
 	elementNodeType, commentNodeType, textNodeType,
 	getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn,
 	objectProto, nodeProto, elementProto, functionProto, functionAsyncProto, nativeProtos, nativeConstructors,
 	isNative, scopeAllowed, defineWeakRef,
 	isElementLoaded, setAttribute, eventRegistry,
 } from "../utils.js";
+import {
+	timing,
+} from "../timing.js";
 import {
 	execExpression, execExpressionProxy,
 } from "../exec.js";
@@ -140,7 +144,7 @@ export class signalController {
 	 */
 	triggerRecording(signal){
 		if(!(signal instanceof signalInstance)) throw new TypeError("triggerRecording signal must be a signalInstance");
-		if(!this.#preventObservers) for(let observer of this.#observersRecording) if(!observer.hasSignal(signal)) observer.recordSignal(signal);
+		if(!this.#preventObservers) for(let observer of this.#observersRecording) observer.recordSignal(signal);
 	}
 	
 	/**
@@ -255,7 +259,7 @@ export class signalController {
 		}
 		if(!sGet) sGet = signal.get.bind(signal); if(!sSet) sSet = signal.set.bind(signal);
 		sGet[signalSymb] = sSet[signalSymb] = signal;
-		defineProperty(obj,prop,{ __proto__:null, configurable, enumerable, get:sGet, set:sSet });
+		mtCacheDefineProperty(obj,prop,{ __proto__:null, configurable, enumerable, get:sGet, set:sSet });
 		return signal;
 	}
 	
@@ -296,7 +300,7 @@ export class signalController {
 		obs.addListener(runFn);
 		try{ runFn(obs,null); } catch(err){ console.error(err); }
 		let result = [ computeSignal, obs, obs.clear.bind(obs) ];
-		if(Symbol.dispose) result[Symbol.dispose] = result[2];
+		result[disposeSymbol] = result[2];
 		return result;
 	}
 	
@@ -333,7 +337,7 @@ export class signalController {
 		obs.addListener(updateFn);
 		computeSignal.invalidatePull();
 		let result = [ computeSignal, obs, obs.clear.bind(obs) ];
-		if(Symbol.dispose) result[Symbol.dispose] = result[2];
+		result[disposeSymbol] = result[2];
 		return result;
 	}
 	
@@ -395,7 +399,7 @@ export class signalController {
 			let proxy = new signalProxy(value,this,signal);
 			let get = ()=>(signal.record(),proxy), set = (v)=>(this.defineProxySignal(obj,prop,v,signal,true),true);
 			get[signalSymb] = set[signalSymb] = signal;
-			defineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
+			mtCacheDefineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
 			signal.record(); signal.set(proxy);
 			return proxy;
 		}
@@ -403,7 +407,7 @@ export class signalController {
 			let get = ()=>(signal.record(),value);
 			let set = (v)=>(v===Object(v) ? (this.defineProxySignal(obj,prop,v,signal,true),true) : (signal.set(value=v),true) );
 			get[signalSymb] = set[signalSymb] = signal;
-			defineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
+			mtCacheDefineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
 			signal.record(); signal.set(value);
 			return value;
 		}

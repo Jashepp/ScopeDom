@@ -1,13 +1,17 @@
 
 import {
-	noopFn, noopAsyncFn, deferFn,
-	animFrameHelper, regexMatchAll, regexExec, regexTest,
+	noopFn, noopAsyncFn, setUnion, disposeSymbol, isPromise,
+	microtaskCache, mtCacheGetDefinedProperty, mtCacheDefineProperty, mtCacheGetPrototypeOf, mtCacheSetPrototypeOf,
+	regexMatchAll, regexExec, regexTest, regexMatchAllFirstGroup,
 	elementNodeType, commentNodeType, textNodeType,
 	getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn,
 	objectProto, nodeProto, elementProto, functionProto, functionAsyncProto, nativeProtos, nativeConstructors,
 	isNative, scopeAllowed, defineWeakRef,
 	isElementLoaded, setAttribute, eventRegistry,
 } from "../utils.js";
+import {
+	timing,
+} from "../timing.js";
 import {
 	execExpression, execExpressionProxy,
 } from "../exec.js";
@@ -283,7 +287,7 @@ export class signalProxy {
 		let signal, { target, signals, signalCtrl } = obj;
 		if(signals.has(prop)) return signals.get(prop);
 		if(currentValue instanceof signalInstance) return currentValue;
-		let descriptor = getOwnPropertyDescriptor(target,prop);
+		let descriptor = mtCacheGetDefinedProperty(target,prop);
 		if(descriptor?.get?.[signalSymb] instanceof signalInstance) return descriptor.get[signalSymb];
 		signal = new signalInstance(signalCtrl,newValue,true);
 		signal.record(); signals.set(prop,signal);
@@ -347,25 +351,25 @@ export class signalProxy {
 	/**
 	 * Proxy handler for `defineProperty` (defineProperty trap).
 	 * 
-	 * Defines a property on the target object using Reflect.defineProperty.
+	 * Defines a property on the target object using mtCacheDefineProperty.
 	 * 
 	 * @param {object} obj - The proxy object
 	 * @param {string} prop - Property name to define on the target
 	 * @param {PropertyDescriptor} attributes - The property descriptor defining configurable, enumerable, get, set, value, etc.
 	 * @returns {boolean} True if the property was successfully defined on the target, false otherwise
 	 */
-	static defineProperty(obj,prop,attributes){ return Reflect.defineProperty(obj.target,prop,attributes); }
+	static defineProperty(obj,prop,attributes){ return mtCacheDefineProperty(obj.target,prop,attributes); }
 	
 	/**
 	 * Proxy handler for `getOwnPropertyDescriptor` (getOwnPropertyDescriptor trap).
 	 * 
-	 * Returns the property descriptor from the target object using Reflect.getOwnPropertyDescriptor.
+	 * Returns the property descriptor from the target object using mtCacheGetDefinedProperty.
 	 * 
 	 * @param {object} obj - The proxy object
 	 * @param {string} prop - Property name to get descriptor for
 	 * @returns {PropertyDescriptor} The property descriptor from the target, or undefined if not found
 	 */
-	static getOwnPropertyDescriptor(obj,prop){ Reflect.getOwnPropertyDescriptor(obj.target,prop); }
+	static getOwnPropertyDescriptor(obj,prop){ mtCacheGetDefinedProperty(obj.target,prop); }
 	
 	/**
 	 * Proxy handler for `setPrototypeOf` (setPrototypeOf trap).
@@ -376,7 +380,7 @@ export class signalProxy {
 	 * @param {object} prototype - The new prototype to set on the target
 	 * @returns {boolean} True if the prototype was successfully set, false otherwise
 	 */
-	static setPrototypeOf(obj,prototype){ return Reflect.setPrototypeOf(obj.target,prototype); }
+	static setPrototypeOf(obj,prototype){ return mtCacheSetPrototypeOf(obj.target,prototype); }
 	
 	/**
 	 * Proxy handler for `getPrototypeOf` (getPrototypeOf trap).
@@ -386,7 +390,7 @@ export class signalProxy {
 	 * @param {object} obj - The proxy object
 	 * @returns {object} The prototype of the target object
 	 */
-	static getPrototypeOf(obj){ return getPrototypeOf(obj.target); }
+	static getPrototypeOf(obj){ return mtCacheGetPrototypeOf(obj.target); }
 	
 	/**
 	 * Proxy handler for `isExtensible` (isExtensible trap).

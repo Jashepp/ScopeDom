@@ -4,6 +4,8 @@ const symbRepeatElementScope = Symbol("pluginRepeatElementScope");
 
 const hasMoveBeforeSupport = 'moveBefore' in Element.prototype && typeof Element.prototype.moveBefore==="function";
 
+let timing, resolveSignal, setAttribute;
+
 /**
  * Plugin for repeating elements based on data iteration.
  * 
@@ -38,6 +40,9 @@ export class pluginRepeat {
 		this.#eventMap = new WeakMap(); // element, set (removeEvent cb)
 		this.#stateMap = new WeakMap(); // element, state
 		this.#afterElementDC = new WeakMap(); // element, cb
+		timing = ScopeDom.timing;
+		resolveSignal = ScopeDom.resolveSignal;
+		setAttribute = ScopeDom.setAttribute;
 	}
 	
 	/**
@@ -186,7 +191,7 @@ export class pluginRepeat {
 		// <any $repeat:use="element"> Handle use attribute pointing to external element
 		if(useElementOption.attribOption){
 			let needsResolving = (useElementOption.execResult instanceof Error || useElementOption.value===null || (typeof useElementOption.value==="string" && useElementOption.value.length>0));
-			useElementOption = this.ScopeDom.resolveSignal(useElementOption.value);
+			useElementOption = resolveSignal(useElementOption.value);
 			// Handle string selector
 			if(needsResolving){
 				if(typeof useElementOption==="string") useElementOption = element.ownerDocument.querySelector(useElementOption);
@@ -329,10 +334,10 @@ export class pluginRepeat {
 		if(includeNodeOption) mainTemplate.content.appendChild(newElement);
 		else for(let e of [...newElement.childNodes]) mainTemplate.content.appendChild(e);
 		if(includeNodeOption){
-			this.ScopeDom.setAttribute(mainTemplate,attribute,newElement.getAttribute(attribute)||'');
+			setAttribute(mainTemplate,attribute,newElement.getAttribute(attribute)||'');
 			newElement.removeAttribute(attribute);
 			for(let [n,opt] of attribOptions) if(opt.attribute && !opt.isDefault){
-				if(!mainTemplate.hasAttribute(opt.attribute)) this.ScopeDom.setAttribute(mainTemplate,opt.attribute,opt.value||'');
+				if(!mainTemplate.hasAttribute(opt.attribute)) setAttribute(mainTemplate,opt.attribute,opt.value||'');
 				newElement.removeAttribute(opt.attribute);
 			}
 			if(newElement.id?.length>0){
@@ -403,7 +408,7 @@ export class pluginRepeat {
 			let self=this; signalObs = state.signalObs = (signalObs || state.signalCtrl.createObserver());
 			signalObs.addListener(function pluginRepeat_signalObserver(){
 				let updateIndex = state.updateIndex;
-				self.ScopeDom.animFrameHelper.onceRAF(state,signalObs,function pluginRepeat_signalObserver_RAF(){
+				timing.onceAnimation(state,signalObs,function pluginRepeat_signalObserver_RAF(){
 					// Only run expressions if updateIndex is still the same
 					if(state.updateIndex!==updateIndex) return;
 					signalObs.clearSignals();
@@ -415,14 +420,14 @@ export class pluginRepeat {
 		if(!exec) state.exec = exec = this.#executeExpression(plugInfo,exp,true,null,signalObs);
 		let execResult = exec.runFn();
 		// Resolve any signal references in the result
-		execResult = this.ScopeDom.resolveSignal(execResult);
+		execResult = resolveSignal(execResult);
 		// Handle fallback when Promise on first update
 		if(state.itemsArr===null && execResult instanceof Promise){
 			this.#handleRepeatDOM(plugInfo,state,updateIndex,[]);
 			updateIndex = state.updateIndex;
 		}
 		// Handle Result - If Promise, defer DOM handling to when it resolves; otherwise handle immediately
-		if(execResult instanceof Promise) this.ScopeDom.animFrameHelper.promiseToRAF(execResult,this.#handleRepeatDOM.bind(this,plugInfo,state,updateIndex));
+		if(execResult instanceof Promise) timing.promiseToRAF(execResult,this.#handleRepeatDOM.bind(this,plugInfo,state,updateIndex));
 		else this.#handleRepeatDOM(plugInfo,state,updateIndex,execResult);
 	}
 	
@@ -452,7 +457,7 @@ export class pluginRepeat {
 		// Update state: Store the result in both element and anchor for external access
 		element.$repeatResult = elementAnchor.$repeatResult = execResult;
 		// Resolve signal references in the result
-		execResult = this.ScopeDom.resolveSignal(execResult);
+		execResult = resolveSignal(execResult);
 		// Convert list into entries [[key,value],...]: Normalize various data types (Map, Set, Array, iterable) to entries
 		let itemsArr = [], domArr = [], anchorArr = [], isArr=false;
 		if(execResult instanceof Map){ itemsArr=Object.entries(execResult); }

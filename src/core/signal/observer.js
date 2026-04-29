@@ -1,13 +1,17 @@
 
 import {
-	noopFn, noopAsyncFn, deferFn,
-	animFrameHelper, regexMatchAll, regexExec, regexTest,
+	noopFn, noopAsyncFn, setUnion, disposeSymbol, isPromise,
+	microtaskCache, mtCacheGetDefinedProperty, mtCacheDefineProperty, mtCacheGetPrototypeOf, mtCacheSetPrototypeOf,
+	regexMatchAll, regexExec, regexTest, regexMatchAllFirstGroup,
 	elementNodeType, commentNodeType, textNodeType,
 	getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn,
 	objectProto, nodeProto, elementProto, functionProto, functionAsyncProto, nativeProtos, nativeConstructors,
 	isNative, scopeAllowed, defineWeakRef,
 	isElementLoaded, setAttribute, eventRegistry,
 } from "../utils.js";
+import {
+	timing,
+} from "../timing.js";
 import {
 	execExpression, execExpressionProxy,
 } from "../exec.js";
@@ -34,7 +38,6 @@ import { signalProxy, resolveSignal } from "./proxy.js";
  * @property {WeakSet<signalInstance>} signals - WeakSet of signals this observer depends on
  * @property {WeakSet<signalInstance>} signalsIgnore - WeakSet of signals to ignore during recording (e.g., the signal being computed)
  * @property {Set<Function>} listeners - Set of listener callbacks invoked when dependent signals change; each called with (observer, signal, oldValue, newValue)
- * @property {boolean} deferChange - Defer change notifications for batching purposes
  * @property {boolean} isDeferring - Change notification has been deferred and not yet executed
  * 
  * @see {@link signalController} - Signal Controller for managing signals and observers
@@ -48,17 +51,15 @@ export class signalObserver {
 	 * 
 	 * @param {signalController} signalCtrl - The parent signal controller that manages this observer
 	 * @param {object} [options={}] - Observer options
-	 * @param {boolean} [options.defer] - Defer listener execution for batching; defaults to ScopeDom instance options.signalDefer
 	 */
 	constructor(signalCtrl,options={}){
-		options = { __proto__:null, defer:signalCtrl?.ScopeDomInstance?.options?.signalDefer, ...options };
+		options = { __proto__:null, ...options };
 		this.ctrl = signalCtrl;
 		this.signals = new WeakSet();
 		this.signalsIgnore = new WeakSet();
 		this.listeners = new Set();
 		this.isRecording = false;
 		this.isChanging = false;
-		this.deferChange = options.defer===true || options.defer===void 0;
 		this.isDeferring = false;
 	}
 	
@@ -79,7 +80,7 @@ export class signalObserver {
 	 * @param {signalInstance} signal - The signal to record as a dependency
 	 */
 	recordSignal(signal){
-		if(!this.signals.has(signal) && !this.signalsIgnore.has(signal)) this.signals.add(signal);
+		if(!this.signalsIgnore.has(signal)) this.signals.add(signal);
 	}
 	
 	/**
@@ -97,25 +98,30 @@ export class signalObserver {
 	 * @param {signalInstance} signal - The signal that changed
 	 * @param {any} oldValue - The previous value before the change
 	 * @param {any} newValue - The new value after the change
-	 * @param {boolean} [forceDefer=false] - Force deferral of listeners (bypasses normal immediate execution)
+	 * @see {@link #callObserverListeners}
 	 */
-	triggerChange(signal,oldValue,newValue,forceDefer=false){
-		if(this.isDeferring || this.isRecording) return;
-		if(this.isChanging || !this.signals.has(signal)) forceDefer = true;
-		let self=this;
-		// Executes a listener
-		function signalObserverListener(fn){ fn(self,signal,oldValue,newValue); }
-		// Perform change notification
-		function signalObserverTrigger(){
-			self.isDeferring = false;
-			if(self.isChanging || self.listeners.size===0) return;
-			self.isChanging = true;
-			for(let fn of self.listeners) try{ signalObserverListener(fn); } catch(err){ console.error(err); }
-			self.isChanging = false;
-		}
-		if(!this.deferChange && !forceDefer) return signalObserverTrigger();
+	triggerChange(signal,oldValue,newValue){
+		if(this.isDeferring || this.isRecording || this.isChanging) return;
 		this.isDeferring = true;
-		deferFn(signalObserverTrigger);
+		timing.deferTask(this.#callObserverListeners.bind(this,signal,oldValue,newValue));
+	}
+	
+	/**
+	 * Call observer listeners with triggered change.
+	 * 
+	 * Used internally by {@link triggerChange}
+	 * 
+	 * @param {signalInstance} signal - The signal that changed
+	 * @param {any} oldValue - The previous value before the change
+	 * @param {any} newValue - The new value after the change
+	 * @returns 
+	 */
+	#callObserverListeners(signal,oldValue,newValue){
+		if(this.isChanging || this.listeners.size===0) return;
+		this.isDeferring = false;
+		this.isChanging = true;
+		for(let fn of this.listeners) try{ fn(this,signal,oldValue,newValue); } catch(err){ console.error(err); }
+		this.isChanging = false;
 	}
 	
 	/**
@@ -156,13 +162,14 @@ export class signalObserver {
 	 * @returns {Function} Wrapped function that starts/stops recording around execution
 	 */
 	wrapRecorder(fn){
-		let self = this;
-		return function signalObserverRecorder(...args){
-			let recording = self.startRecording();
-			let result; try{ result=fn(...args); }catch(err){ console.error(err); }
-			if(recording) self.stopRecording();
-			return result;
-		};
+		return this.#signalObserverRecorder.bind(this,fn);
+	}
+	
+	#signalObserverRecorder(fn,...args){
+		let recording = this.startRecording();
+		let result; try{ result=fn(...args); }catch(err){ console.error(err); }
+		if(recording) this.stopRecording();
+		return result;
 	}
 	
 	/**
@@ -195,6 +202,6 @@ export class signalObserver {
 	 * Used internally by computed signals.
 	 */
 	clearSignals(){ this.signals=new WeakSet(); }
+	
+	[disposeSymbol] = signalObserver.prototype.clear;
 }
-
-if(Symbol.dispose) signalObserver.prototype[Symbol.dispose] = signalObserver.prototype.clear;
