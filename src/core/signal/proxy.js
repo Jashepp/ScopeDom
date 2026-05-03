@@ -143,8 +143,9 @@ export class signalProxy {
 		if(signal.get()!==getValue) signal.set(getValue);
 		if(isPrimitive && proxies.has(prop)) proxies.delete(prop);
 		if(isPrimitive) return getValue;
-		if(proxies.has(prop)) return proxies.get(prop);
-		let proxy = new signalProxy(getValue,signalCtrl,signal,true);
+		let proxy = proxies.get(prop);
+		if(proxy!==void 0) return proxy;
+		proxy = new signalProxy(getValue,signalCtrl,signal,true);
 		return proxies.set(prop,proxy), proxy;
 	}
 	
@@ -284,8 +285,9 @@ export class signalProxy {
 	 * @returns {signalInstance} The existing or newly created signal instance for this property
 	 */
 	static _proxyEnsureSignal(obj,prop,currentValue=void 0,newValue=currentValue){
-		let signal, { target, signals, signalCtrl } = obj;
-		if(signals.has(prop)) return signals.get(prop);
+		let { target, signals, signalCtrl } = obj;
+		let signal = signals.get(prop);
+		if(signal!==void 0) return signal;
 		if(currentValue instanceof signalInstance) return currentValue;
 		let descriptor = mtCacheGetDefinedProperty(target,prop);
 		if(descriptor?.get?.[signalSymb] instanceof signalInstance) return descriptor.get[signalSymb];

@@ -395,22 +395,18 @@ export class signalController {
 	defineProxySignal(obj,prop,value,signal=null,silentFallback=false){
 		if(!silentFallback && value!==Object(value)) throw new TypeError("defineProxySignal target must not be a primitive, try defineSignal instead");
 		if(!signal) signal = new signalInstance(this,value);
+		let set;
 		if(value===Object(value)){
-			let proxy = new signalProxy(value,this,signal);
-			let get = ()=>(signal.record(),proxy), set = (v)=>(this.defineProxySignal(obj,prop,v,signal,true),true);
-			get[signalSymb] = set[signalSymb] = signal;
-			mtCacheDefineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
-			signal.record(); signal.set(proxy);
-			return proxy;
+			value = new signalProxy(value,this,signal);
+			set = (v)=>(this.defineProxySignal(obj,prop,v,signal,true),true);
+		} else {
+			set = (v)=>(v===Object(v) ? (this.defineProxySignal(obj,prop,v,signal,true),true) : (signal.set(value=v),true) );
 		}
-		else {
-			let get = ()=>(signal.record(),value);
-			let set = (v)=>(v===Object(v) ? (this.defineProxySignal(obj,prop,v,signal,true),true) : (signal.set(value=v),true) );
-			get[signalSymb] = set[signalSymb] = signal;
-			mtCacheDefineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
-			signal.record(); signal.set(value);
-			return value;
-		}
+		let get = ()=>(signal.record(),value);
+		get[signalSymb] = set[signalSymb] = signal;
+		mtCacheDefineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
+		signal.record(); signal.set(value);
+		return value;
 	}
 	
 }

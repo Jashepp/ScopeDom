@@ -117,7 +117,7 @@ export class signalObserver {
 	 * @returns 
 	 */
 	#callObserverListeners(signal,oldValue,newValue){
-		if(this.isChanging || this.listeners.size===0) return;
+		if(this.isChanging) return;
 		this.isDeferring = false;
 		this.isChanging = true;
 		for(let fn of this.listeners) try{ fn(this,signal,oldValue,newValue); } catch(err){ console.error(err); }
