@@ -2,23 +2,30 @@
   "name": "scope-dom",
   "version": "0.0.1",
   "description": "[Experimental] Declarative HTML logic & behaviour, with hierarchical scoping",
-  "type": "module",
-  "module": "./src/scopedom.js",
-  "directories": {
-    "test": "tests"
-  },
   "author": "unchosen.aus@gmail.com",
   "license": "copyright",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Jashepp/Scope-dom"
+    "url": "https://github.com/Jashepp/ScopeDom"
   },
   "devDependencies": {
-    "rollup": "^4.53.3",
+    "cross-env": "^10.1.0",
+    "http-server": "^14.1.1",
+    "rolldown": "^1.0.0-rc.18"
   },
   "scripts": {
-    "build": "rollup -c --filterLogs !code:CIRCULAR_DEPENDENCY",
-    "server": "npx http-server ./ -c-1 -p 8181",
-    "build:watch": "rollup -c --watch --filterLogs !code:CIRCULAR_DEPENDENCY"
-  }
+    "server": "http-server ./ -c-1 -p 8181",
+    "build": "cross-env NODE_ENV=development rolldown -c --filterLogs !code:CIRCULAR_DEPENDENCY",
+    "build:watch": "cross-env NODE_ENV=development rolldown -c --watch --filterLogs !code:CIRCULAR_DEPENDENCY",
+    "release:build": "cross-env NODE_ENV=production rolldown -c --filterLogs !code:CIRCULAR_DEPENDENCY",
+    "np-dry": "npm publish --dry-run"
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md",
+    "LICENSE.md"
+  ],
+  "type": "module",
+  "module": "./src/scopedom.js"
 }

@@ -1,0 +1,18 @@
+{
+	"compilerOptions": {
+		"checkJs": false,
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"target": "ESNext",
+		"strictNullChecks": true,
+		"strictFunctionTypes": true,
+		"strict": true,
+		"lib": ["ES2015","ESNext","DOM"],
+		"skipLibCheck": true
+	},
+  	"include": ["src/**/*","tests/**/*"],
+	"exclude": [
+		"node_modules",
+		"**/node_modules/*"
+	]
+}
