@@ -10,7 +10,7 @@ export const originalDefer = hasQueueMicrotask ? queueMicrotask : Promise.protot
 export function noopFn(){};
 export async function noopAsyncFn(){};
 
-export const { getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn } = Object;
+export const { getPrototypeOf, setPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn } = Object;
 
 export function setUnion(setA,setB){ return Set.prototype.union ? setA.union(setB) : new Set([...setA,...setB]); };
 export const disposeSymbol = Symbol.dispose || Symbol.for('Symbol.dispose');
@@ -114,16 +114,26 @@ export class microtaskCache {
 	}
 	
 	static getOrCompute(wmKey,key,fn){
-		if(!mtCacheWM.has(wmKey)) mtCacheWM.set(wmKey,new Map());
-		if(mtCacheWM.get(wmKey).has(key)) return microtaskCache.get(wmKey,key);
+		let innerMap, hasMap = mtCacheWM.has(wmKey);
+		if(!hasMap) mtCacheWM.set(wmKey,innerMap=new Map());
+		else innerMap = mtCacheWM.get(wmKey);
 		if(mtDeferring) mtDeferAgain = true;
-		let value = fn(); microtaskCache.set(wmKey,key,value);
+		if(hasMap && innerMap.has(key)) return innerMap.get(key);
+		let value = fn();
+		innerMap.set(key,value);
+		if(!mtDeferring){
+			mtDeferring = true;
+			originalDefer(microtaskCache.#deferredCleanup);
+		}
+		else mtDeferAgain = true;
 		return value;
 	}
 	
 	static set(wmKey,key,value){
-		if(!mtCacheWM.has(wmKey)) mtCacheWM.set(wmKey,new Map());
-		mtCacheWM.get(wmKey).set(key,value);
+		let innerMap, hasMap = mtCacheWM.has(wmKey);
+		if(!hasMap) mtCacheWM.set(wmKey,innerMap=new Map());
+		else innerMap = mtCacheWM.get(wmKey);
+		innerMap.set(key,value);
 		if(!mtDeferring){
 			mtDeferring = true;
 			originalDefer(microtaskCache.#deferredCleanup);
@@ -133,7 +143,7 @@ export class microtaskCache {
 	}
 	
 	static delete(wmKey,key){
-		if(mtCacheWM.get(wmKey)?.has(key)) mtCacheWM.get(wmKey).delete(key);
+		mtCacheWM.get(wmKey)?.delete(key);
 	}
 	
 	static #deferredCleanup(){
@@ -150,11 +160,13 @@ export class microtaskCache {
 	
 }
 
+/** @type {typeof Object.getOwnPropertyDescriptor} */
 export function mtCacheGetDefinedProperty(obj,prop){
 	let key = prop?.toString ? 'mtCachePropDesc:'+prop.toString() : prop;
 	return microtaskCache.getOrCompute(obj,key,_=>getOwnPropertyDescriptor(obj,prop));
 }
 
+/** @type {typeof Object.defineProperty} */
 export function mtCacheDefineProperty(obj,prop,options){
 	let result = defineProperty(obj,prop,options);
 	let key = prop?.toString ? 'mtCachePropDesc:'+prop.toString() : prop;
@@ -162,12 +174,14 @@ export function mtCacheDefineProperty(obj,prop,options){
 	return result;
 }
 
+/** @type {typeof Object.getPrototypeOf} */
 export function mtCacheGetPrototypeOf(obj){
 	return microtaskCache.getOrCompute(obj,'mtCacheGetProto',_=>getPrototypeOf(obj));
 }
 
+/** @type {typeof Object.setPrototypeOf} */
 export function mtCacheSetPrototypeOf(obj,newProto){
-	let result = Object.setPrototypeOf(obj,newProto);
+	let result = setPrototypeOf(obj,newProto);
 	microtaskCache.delete(obj,'mtCacheGetProto');
 	return result;
 }
