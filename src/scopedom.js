@@ -331,6 +331,8 @@ class ScopeDom {
 		this.elementExtraScopes = new WeakMap(); // element -> array -> objects/elements
 		/** @type {WeakMap} Element isolated scopes */
 		this.elementIsolatedScopes = new WeakSet();
+		/** @type {WeakMap} Alias element -> Source / Original element, for cache keys */
+		this.elementSources = new WeakSet();
 		/** @type {Set} Ready callbacks listeners */
 		this.onReadyListeners = new Set();
 		/** @type {Set} DOM ready callbacks listeners */
@@ -1319,6 +1321,7 @@ class ScopeDom {
 		if(this.cacheElementScopeCtrls.has(element)) this.cacheElementScopeCtrls.delete(element);
 		if(this.elementExtraScopes.has(element)) this.elementExtraScopes.delete(element);
 		if(this.elementIsolatedScopes.has(element)) this.elementIsolatedScopes.delete(element);
+		if(this.elementSources.has(element)) this.elementSources.delete(element);
 		this.removeElementRelatedEvents(element);
 		this.scopeCtrl.eventRegistry.remove(element);
 		if(completely){

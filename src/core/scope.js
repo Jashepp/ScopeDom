@@ -750,6 +750,13 @@ export class scopeElementController {
 		if(elementContext) otherScopes.add(elementContext);
 		// Add current scope controller context ($update, $on, $emit, $signal, etc.)
 		if(this.ctrl.execContext) otherScopes.add(this.ctrl.execContext);
+		// Source element
+		if(!fnOptions.sourceElement){
+			if(instance.elementSources.has(this.element)) fnOptions.sourceElement = instance.elementSources.get(this.element);
+			else if(instance.elementExtraScopes.has(this.element)) fnOptions.sourceElement = instance.elementExtraScopes.get(this.element).find(e=>e instanceof nodeProto.constructor);
+			if(fnOptions.sourceElement?.nodeType===textNodeType) fnOptions.sourceElement = fnOptions.sourceElement.parentNode;
+			if(!fnOptions.sourceElement) fnOptions.sourceElement = this.element;
+		}
 		// Prepare expression builder/execution options
 		fnOptions.scopeUseOwn = scopeUseOwn;
 		if(!('useSignalProxy' in fnOptions)) fnOptions.useSignalProxy = instance.options.signalProxyAll;

@@ -34,8 +34,6 @@ const execExpOptionsDefaults = {
 	useReturn: false,
 	/** @type {boolean} Custom `this` binding for generated function, otherwise the proxy itself */
 	fnThis: null,
-	/** @type {boolean} Return raw function without error logging wrapper */
-	fnRaw: false,
 	/** @type {boolean} Enable "use strict" in generated code */
 	strictMode: true,
 	/** @type {boolean} Generate async function (auto-detected if 'await' in expression) */
@@ -53,7 +51,9 @@ const execExpOptionsDefaults = {
 	/** @type {object|null} Scope controller for signal proxy support */
 	scopeCtrl: null,
 	/** @type {boolean} Auto-create signal proxies for non-primitive values */
-	useSignalProxy: false
+	useSignalProxy: false,
+	/** @type {HTMLElement|null} Source / Original element, for cache keys */
+	sourceElement: null,
 };
 
 /**
@@ -94,8 +94,7 @@ const execExpProxyDefaults = {
  * @typedef {object} execExpResult
  * @property {null|any} result The execution result (null if not run, or Promise if async)
  * @property {object} firstScope The first scope in the getScopes Set
- * @property {Function} function The generated expression function
- * @property {Function} runFn The runnable function, wrapped with error logging, or raw function if fnRaw=true
+ * @property {Function} runFn The runnable function, wrapped with error console logging
  * @property {Error|any} logFnError Error logging callback function for expression errors
  * @property {Set<object>} getScopes Set of scopes to read from (for property get operations)
  * @property {Set<object>} setScopes Set of scopes to write to (for property set operations)
@@ -125,31 +124,52 @@ const execExpProxyDefaults = {
 export class execExpression {
 	
 	/**
+	 * TODO: use TrustedScript if passed from scopedom init or options
+	 */
+	
+	/** @type {WeakMap} Cache generated functions to lower memory usage */
+	static #expCache = new WeakMap();
+	
+	/**
 	 * Generate wrapper code for an expression.
 	 * 
 	 * Creates a function that:
-	 * 1. Uses `with($sdcScope)` to inject scope variables into the context
-	 * 2. Declares local variables ($sdcScope, arguments, constructor) to shadow globals
+	 * 1. Uses `with($sdProxy)` to inject scope variables into the context
+	 * 2. Declares local variables ($sdProxy, arguments, constructor) to shadow globals
 	 * 3. Generates either async or sync function based on options
 	 * 4. Wraps the expression in a return statement or as an expression statement
 	 * 5. Applies the function to the proxy context
 	 * 
 	 * @param {string} expression The expression to generate code for
-	 * @param {execExpOptionsDefaults} options Execution options
+	 * @param {execExpOptionsDefaults} options Expression options
 	 * @param {string} fnNameSuffix Suffix for function name
 	 * @returns {string} Generated function code
 	 */
 	static #generateCode(expression,options,fnNameSuffix){
 		let { useAsync, strictMode, useReturn } = options;
-		let fnName = '$sdcExp'+(fnNameSuffix?.length>0 ? "_"+fnNameSuffix.replace(/[^A-Za-z0-9]/g,'_') : ''), fnCode
-		=`with($sdcScope){` // `with` statement & proxy to capture variable lookups
-		+	`let $sdcScope,arguments,constructor;` // local vars shadow potential globals
+		let fnName = '$sdExp'+(fnNameSuffix?.length>0 ? "_"+fnNameSuffix.replace(/[^A-Za-z0-9\$]/g,'_') : ''), fnCode
+		=`try{with($sdProxy){\n` // `with` statement & proxy to capture variable lookups
+		+	`let $sdProxy,arguments,constructor;\n` // clear local variables
 		+	`return${useAsync ? "(async " : "(" }function ${fnName}(){` // async if expression uses await
-		+		`${strictMode ? "\"use strict\";" : ""}${useAsync ? "let $sdcCatchError;" : ""}` // error handler for async
-		+		(useReturn ? `return (\n\n${expression}\n\n);` : `\n\n${expression};\n\n/**/`) // return or expression
-		+	`}).apply(this)${useAsync?".catch($sdcCatchError);":";"}` // async catch or semicolon
-		+`}`;
+		+		`${strictMode ? "\"use strict\";" : ""}let $sdcCatchError;\n` // strict mode & clear sdcCatchError
+		+		(useReturn ? `return(\n\n${expression}\n\n)` : `\n\n${expression};\n\n/**/`) // return or expression
+		+	`}).apply(this)${useAsync?".catch($sdcCatchError)":""}\n` // async catch
+		+`}}catch(e){return $sdcCatchError(e),e}`; // error handler
 		return fnCode;
+	}
+	
+	/**
+	 * Generate key for expression cache.
+	 * 
+	 * @param {string} expression The expression to generate code for
+	 * @param {execExpOptionsDefaults} options Expression options
+	 * @param {string} fnNameSuffix Suffix for function name
+	 * @param {string} args Expression arguments
+	 * @returns {string} Key for this expression, options, name & args combination
+	 */
+	static #genExpKey(expression,options,fnNameSuffix,args){
+		let { useAsync, strictMode, useReturn } = options;
+		return `${fnNameSuffix}|${expression}|${args.join(',')}|${useAsync?'async':''},${strictMode?'strict':''},${useReturn?'return':''}`;
 	}
 	
 	/**
@@ -183,10 +203,10 @@ export class execExpression {
 	static buildExp(expression,mainScopes,extraScopes=[],options={}){
 		if(expression!==String(expression)) throw new Error("Invalid expression: "+expression);
 		options = { __proto__:null, ...execExpOptionsDefaults, ...options };
-		let { fnThis, useAsync, scopeUseOwn, silentHas, globalsHide, throwGlobals, scopeCtrl, useSignalProxy, argument, fnRaw } = options;
+		let { fnThis, useAsync, scopeUseOwn, silentHas, globalsHide, throwGlobals, scopeCtrl, useSignalProxy, argument, sourceElement } = options;
 		// Auto-detect async if expression contains 'await'. This could be done in a better way, but that would sacrifice performance.
 		useAsync = options.useAsync = useAsync || expression.indexOf('await')!==-1;
-		let globalObj = window, globalCatch = noopFn, unscopables = execExpProxyDefaults.unscopables, args = ['$sdcScope','$sdcCatchError'];
+		let globalObj = window, globalCatch = noopFn, unscopables = execExpProxyDefaults.unscopables, args = ['$sdProxy','$sdcCatchError'];
 		// If both globalsHide and throwGlobals are true, throw on global access
 		if(globalsHide && throwGlobals) globalCatch = (key)=>{ throw new Error("Expression tried to access a global variable: "+key); };
 		// If argument is provided, add it to unscopables
@@ -195,19 +215,28 @@ export class execExpression {
 		let { getScopes, setScopes } = execExpression.#parseScopes(mainScopes,extraScopes);
 		// Create proxy with resolved options
 		let proxy = new execExpressionProxy({ ...execExpProxyDefaults, mainScopes, getScopes, setScopes, scopeUseOwn, silentHas, globalObj, globalsHide, globalCatch, scopeCtrl, useSignalProxy, unscopables });
+		// Retrieve function from cache
+		let runFn, expCache = execExpression.#expCache, genFn, cacheMap;
+		let fnKey = this.#genExpKey(expression,options,proxy.$attribute,args);
+		if(!expCache.has(sourceElement)) expCache.set(sourceElement,cacheMap = new Map());
+		else cacheMap = expCache.get(sourceElement);
+		if(cacheMap.has(fnKey)) genFn = cacheMap.get(fnKey);
 		// Generate final function code with expression
-		let fnCode = execExpression.#generateCode(expression,options,proxy.$attribute);
-		// Get constructor from functionProto or functionAsyncProto
-		let fn, fnc = useAsync ? functionAsyncProto.constructor : functionProto.constructor;
+		else {
+			let fnCode = execExpression.#generateCode(expression,options,proxy.$attribute);
+			// Get constructor from functionProto or functionAsyncProto
+			let fn, fnc = useAsync ? functionAsyncProto.constructor : functionProto.constructor;
+			// Create new function & cache it
+			genFn = new fnc(args,fnCode);
+			cacheMap.set(fnKey,genFn);
+		}
 		// Error logging callback
 		let logFnError = (err)=>console.warn(`ScopeDom: Error on Expression: ${expression}\n`,err.message,'\n',{ expression, fnCode, function:fn, mainScopes, getScopes, setScopes, result:err });
 		// Create function using Function constructor with dynamic arguments
-		try{ fn = (new fnc(args,fnCode)).bind(fnThis||proxy,proxy,logFnError); }
+		try{ runFn = genFn.bind(fnThis||proxy,proxy,logFnError); }
 		catch(err){ logFnError(err); }
-		// Create runFn wrapper with error handling (unless fnRaw)
-		let runFn = !fn ? noopFn : (fnRaw ? fn : function $sdcExpRun(a){ try{ return fn(a); }catch(err){ return logFnError(err),err; } });
 		// Return with extra info for debugging
-		return { __proto__:null, result:null, firstScope:getScopes.values().next().value, function:fn, runFn, logFnError, getScopes, setScopes, proxy, options };
+		return { __proto__:null, result:null, firstScope:getScopes.values().next().value, runFn, logFnError, getScopes, setScopes, proxy, options };
 	}
 	
 	/**
@@ -489,9 +518,9 @@ export class execExpressionProxy {
 			if(value instanceof signalInstance) signal = value;
 			else if(descriptor?.value instanceof signalInstance) signal = descriptor.value;
 			else if(descriptor?.get?.[signalSymb] instanceof signalInstance) signal = descriptor.get[signalSymb];
-			if(signal) return signal.get();
+			if(signal!==void 0) return signal.get();
 			// If no signal, and value isn't primitive, create signalProxy for automatic reactive property access
-			if(descriptor?.configurable && !signal && value===Object(value)){
+			if(descriptor?.configurable && signal===void 0 && value===Object(value)){
 				// This modifies existing scope data
 				return signalCtrl.defineProxySignal(target,prop,value);
 			}
@@ -521,7 +550,7 @@ export class execExpressionProxy {
 		if(descriptor?.value instanceof signalInstance) return descriptor.value.set(value), true;
 		// If using signalProxy on all scopes & expressions
 		if(obj.useSignalProxy && signalCtrl && !descriptor){
-			let signal = new signalInstance(signalCtrl,value);
+			let signal = new signalInstance(signalCtrl,void 0);
 			return signalCtrl.defineProxySignal(target,prop,value,signal,true), true;
 		}
 		// Otherwise, standard property set
