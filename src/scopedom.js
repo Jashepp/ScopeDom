@@ -534,6 +534,7 @@ class ScopeDom {
 		// Trigger $update for any plugins or applications that use it
 		this.scopeCtrl.$emit("$update");
 		// Force run compute queue to empty it
+		timing.deferNextCompute();
 		timing.queueCompute();
 		// Finish on-ready update
 		originalDefer(this.#endOnReady.bind(this));

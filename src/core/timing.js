@@ -7,7 +7,7 @@ import {
 let deferList = new Set(), isDeferQueued = false;
 
 // Queue Compute Variables
-let computeList = new Set(), isComputeQueued = false;
+let computeList = new Set(), isComputeQueued = false, deferCompute = false;
 
 // Queue Render Animation Variables
 let rafList=new Set(), rafOnceList=new Map(), isDuringRAF=false, isRAFScheduled=false;
@@ -38,16 +38,15 @@ export class timing {
 	
 	// - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 	
-	static #deferCompute = false;
 	static deferNextCompute(){
-		timing.#deferCompute = true;
+		deferCompute = true;
 	}
 	
 	static queueCompute(fn){
 		if(fn) computeList.add(fn);
 		if(!isComputeQueued){
 			isComputeQueued = true;
-			if(isDeferQueued || timing.#deferCompute) originalDefer(timing.#handleQueue);
+			if(isDeferQueued || deferCompute) originalDefer(timing.#handleQueue);
 			// setTimeout 0 runs compute functions right after animation frame (if any), before next frame
 			else setTimeout(timing.#handleQueue,0);
 		}
@@ -58,7 +57,7 @@ export class timing {
 		timing.#handleComputeQueue();
 		for(let i=0; i<3 && (deferList.size>0 || computeList.size>0); i++) await timing.#handleComputeQueue();
 		isComputeQueued = false;
-		timing.#deferCompute = false;
+		deferCompute = false;
 	}
 	
 	static #handleComputeQueue(){
