@@ -43,7 +43,7 @@ const disableDocumentDefaultView = ()=>{
  */
 const initOptionsDefaults = {
 	/** @type {boolean} Verbose developer logging */
-	dev: true,
+	dev: false,
 	/** @type {boolean} Regex for parsing attribute names */
 	attribRegexMatch: /^\$((?:[\.\w\d]+)(?:\-[\.\w\d]+)*?)(?:\:((?:[\.\w\d]+)(?:\-[\.\w\d]+)*?))?$/, // group1: name, group2: option
 	/** @type {boolean} Regex for parsing attribute parts */
@@ -78,6 +78,7 @@ const initOptionsDefaults = {
 	signalProxyAll: true,
 };
 let initOptionsScriptTag = null;
+DEV: initOptionsDefaults.dev = true;
 
 /**
  * Default values for scope element attributes.
@@ -1323,7 +1324,7 @@ class ScopeDom {
 		if(this.elementIsolatedScopes.has(element)) this.elementIsolatedScopes.delete(element);
 		if(this.elementSources.has(element)) this.elementSources.delete(element);
 		this.removeElementRelatedEvents(element);
-		this.scopeCtrl.eventRegistry.remove(element);
+		this.eventRegistry.remove(element);
 		if(completely){
 			this.cacheConnectedNodes.delete(element);
 			this.pendingConnectNodes.delete(element);

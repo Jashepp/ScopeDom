@@ -497,6 +497,7 @@ export class pluginParse {
 				if(expressionArray.length===1) exp = expressionArray[0];
 				else exp = `[${expressionArray.join(',')}].join('')`;
 				if(!attribMap.has(name)) attribMap.set(name,{ __proto__:null, exec:null, signalObs:null, exp, original:nodeText, updateIndex:0 });
+				DEV: if(name==='class') console.warn("ScopeDom Recommendation: Use $class instead of $parse attrib class.",e);
 			}
 		}
 	}
