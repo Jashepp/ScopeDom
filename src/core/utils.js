@@ -163,7 +163,7 @@ export class microtaskCache {
 /** @type {typeof Object.getOwnPropertyDescriptor} */
 export function mtCacheGetDefinedProperty(obj,prop){
 	let key = prop?.toString ? 'mtCachePropDesc:'+prop.toString() : prop;
-	return microtaskCache.getOrCompute(obj,key,_=>getOwnPropertyDescriptor(obj,prop));
+	return microtaskCache.getOrCompute(obj,key,getOwnPropertyDescriptor.bind(null,obj,prop));
 }
 
 /** @type {typeof Object.defineProperty} */
@@ -176,7 +176,7 @@ export function mtCacheDefineProperty(obj,prop,options){
 
 /** @type {typeof Object.getPrototypeOf} */
 export function mtCacheGetPrototypeOf(obj){
-	return microtaskCache.getOrCompute(obj,'mtCacheGetProto',_=>getPrototypeOf(obj));
+	return microtaskCache.getOrCompute(obj,'mtCacheGetProto',getPrototypeOf.bind(null,obj));
 }
 
 /** @type {typeof Object.setPrototypeOf} */

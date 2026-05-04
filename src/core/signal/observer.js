@@ -53,7 +53,7 @@ export class signalObserver {
 	 * @param {object} [options={}] - Observer options
 	 */
 	constructor(signalCtrl,options={}){
-		options = { __proto__:null, ...options };
+		// options = { __proto__:null, ...options };
 		this.ctrl = signalCtrl;
 		this.signals = new WeakSet();
 		this.signalsIgnore = new WeakSet();

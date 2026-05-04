@@ -49,12 +49,21 @@ export class scopeInstance {
 		else mtCacheSetPrototypeOf(this,scopeObj);
 		// Add methods
 		Object.defineProperties(mainObj,{
-			$scopeTop:{ __proto__:null, configurable:false, enumerable:!true, get(){ return scopeCtrl?.topCtrl?.scope||scopeCtrl?.parentCtrl?.topCtrl?.scope||scopeCtrl?.parentCtrl?.scope||scopeCtrl?.scope; } },
-			$scopeParent:{ __proto__:null, configurable:false, enumerable:!true, get(){ return scopeCtrl?.parentCtrl?.scope||scopeCtrl?.scope; } },
+			$scopeTop:{ __proto__:null, configurable:false, enumerable:false, get:scopeInstance.#descScopeTopGetter.bind(null,scopeCtrl) },
+			$scopeParent:{ __proto__:null, configurable:false, enumerable:false, get:scopeInstance.#descScopeParentGetter.bind(null,scopeCtrl) },
 		});
 		// Return this, or scopeObj if proto changed
 		return mainObj;
 	}
+	
+	static #descScopeTopGetter(scopeCtrl){
+		return scopeCtrl?.topCtrl?.scope || scopeCtrl?.parentCtrl?.topCtrl?.scope || scopeCtrl?.parentCtrl?.scope || scopeCtrl?.scope;
+	}
+	
+	static #descScopeParentGetter(scopeCtrl){
+		return scopeCtrl?.parentCtrl?.scope || scopeCtrl?.scope;
+	}
+	
 };
 
 /**
@@ -73,8 +82,11 @@ export class scopeBase {
 	 */
 	constructor(){ return Object.create(null,{
 		__proto__: { __proto__:null, value:null },
-		$scope:{ __proto__:null, configurable:false, enumerable:!true, get(){ return this; } }
+		$scope:{ __proto__:null, configurable:false, enumerable:false, get:scopeBase.#descThisGetter }
 	}); }
+	
+	static #descThisGetter(){ return this; }
+	
 }
 
 const scSymb = Symbol('$scopeControllerContext');
@@ -166,7 +178,10 @@ export class scopeControllerContext {
 	 * @param {string} [uniqueID] Unique ID for onceRAF deduplication
 	 * @returns {void}
 	 */
-	$emitRAF(name,detail=null,options=null,uniqueID=this.$attribute||'$emitRAF:scc'){ return timing.onceAnimation(this.$this||this[scSymb].scope,uniqueID+':'+name,()=>this[scSymb].$emit(name,detail,options)); };
+	$emitRAF(name,detail=null,options=null,uniqueID=this.$attribute||'$emitRAF:scc'){
+		let scopeCtrl = this[scSymb];
+		return timing.onceAnimation(this.$this||scopeCtrl.scope,uniqueID+':'+name,scopeCtrl.$emit.bind(scopeCtrl,name,detail,options));
+	};
 	
 	/**
 	 * Request an animation frame callback.
@@ -288,14 +303,17 @@ export class scopeController {
 	 * @param {string} [suffix] Optional suffix for custom update events (not used by any core features)
 	 */
 	$emitScopeUpdate(suffix=''){
-		let evt='$update'+(suffix?.length>0?'-'+suffix:''), emitUpdate=()=>{
-			if(this.isDuringUpdate) return;
-			this.isDuringUpdate = true;
-			this.$emit(evt+':before'); this.$emit(evt); this.$emit(evt+':after');
-			this.isDuringUpdate = false;
-		};
-		if(timing.isDuringRAF || this.ScopeDomInstance.isDuringOnReady || this.isDuringUpdate){ timing.deferTask(emitUpdate); }
+		let evt = '$update'+(suffix?.length>0?'-'+suffix:'');
+		let emitUpdate = this.#emitUpdate.bind(this,evt);
+		if(timing.isDuringRAF || this.ScopeDomInstance.isDuringOnReady || this.isDuringUpdate) timing.deferTask(emitUpdate);
 		else timing.onceAnimation(this.scope,evt,emitUpdate,true);
+	}
+	
+	#emitUpdate(evt){
+		if(this.isDuringUpdate) return;
+		this.isDuringUpdate = true;
+		this.$emit(evt+':before'); this.$emit(evt); this.$emit(evt+':after');
+		this.isDuringUpdate = false;
 	}
 	
 	/**
@@ -753,7 +771,7 @@ export class scopeElementController {
 		// Source element
 		if(!fnOptions.sourceElement){
 			if(instance.elementSources.has(this.element)) fnOptions.sourceElement = instance.elementSources.get(this.element);
-			else if(instance.elementExtraScopes.has(this.element)) fnOptions.sourceElement = instance.elementExtraScopes.get(this.element).find(e=>e instanceof nodeProto.constructor);
+			else if(instance.elementExtraScopes.has(this.element)) fnOptions.sourceElement = instance.elementExtraScopes.get(this.element).find(this.#findIsNode);
 			if(fnOptions.sourceElement?.nodeType===textNodeType) fnOptions.sourceElement = fnOptions.sourceElement.parentNode;
 			if(!fnOptions.sourceElement) fnOptions.sourceElement = this.element;
 		}
@@ -771,6 +789,8 @@ export class scopeElementController {
 		else return execExpression.buildExp(expression,mainScopes,otherScopes,fnOptions);
 	}
 	
+	#findIsNode(e){ return e instanceof nodeProto.constructor; }
+	
 	/**
 	 * Emit DOM update event for this element.
 	 * 
@@ -783,14 +803,19 @@ export class scopeElementController {
 		if(this.isDuringUpdateDom) return; // Ignore DOM Update during DOM Update (for same element)
 		if(this.ctrl.isDuringUpdate) return; // Ignore DOM Update during Scope Update
 		if(this.ScopeDomInstance.isDuringOnReady) return; // Ignore DOM Update during On Ready
-		let evt='$update'+(suffix?.length>0?'-'+suffix:''), u=void 0, emitUpdate=()=>{
-			if(this.isDuringUpdateDom) return;
-			this.isDuringUpdateDom = true;
-			this.$emitDomChildren(evt+':before',u,u,emitSelf); this.$emitDomChildren(evt,u,u,emitSelf); this.$emitDomChildren(evt+':after',u,u,emitSelf);
-			this.isDuringUpdateDom = false;
-		};
+		let evt = '$update'+(suffix?.length>0?'-'+suffix:'');
+		let emitUpdate = this.#emitUpdate.bind(this,evt,void 0,emitSelf);
 		if(timing.isDuringRAF){ timing.deferTask(emitUpdate); }
 		else timing.onceAnimation(this.element,evt,emitUpdate,true);
+	}
+	
+	#emitUpdate(evt,u,emitSelf){
+		if(this.isDuringUpdateDom) return; // Ignore DOM Update during DOM Update (for same element)
+		this.isDuringUpdateDom = true;
+		this.$emitDomChildren(evt+':before',u,u,emitSelf);
+		this.$emitDomChildren(evt,u,u,emitSelf);
+		this.$emitDomChildren(evt+':after',u,u,emitSelf);
+		this.isDuringUpdateDom = false;
 	}
 	
 	/**
@@ -805,11 +830,14 @@ export class scopeElementController {
 	 */
 	$emitDomChildren(name,detail=null,options=null,emitSelf=false){
 		options = { __proto__:null, ...options, bubbles:false };
-		let emitChildren = (e,emitSelf=false)=>{
-			if(emitSelf) this.ctrl.$emitTarget(e,name,detail,options);
-			if(e?.childNodes?.length>0) for(let c of Array.from(e.childNodes)) if(c.isConnected && c.parentNode===e) emitChildren(c,true);
-		};
-		emitChildren(this.element,emitSelf);
+		this.#emitChildren(this.element,emitSelf,name,detail,options);
+	}
+	
+	#emitChildren(e,emitSelf,name,detail,options){
+		if(emitSelf) this.ctrl.$emitTarget(e,name,detail,options);
+		if(e?.childNodes?.length>0) for(let c of Array.from(e.childNodes)){
+			if(c.isConnected && c.parentNode===e) this.#emitChildren(c,true,name,detail,options);
+		}
 	}
 	
 	/**

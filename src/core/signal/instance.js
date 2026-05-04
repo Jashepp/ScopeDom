@@ -95,7 +95,7 @@ export class signalInstance {
 		// Cofigure new signal
 		this.#ctrl = signalCtrl; this.#useWeakRef = useWeakRef && !!window.WeakRef;
 		if(value instanceof Promise || typeof value?.then==="function" || value instanceof signalInstance) this.set(value);
-		else this.#setFn(value);
+		else this.#setInner(value);
 		this.#isGetting = false;
 		Object.seal(this);
 		// If non-primitive, add signal to weakmap / cache
@@ -145,7 +145,7 @@ export class signalInstance {
 	 * @param {any} v - The value to set
 	 * @private
 	 */
-	#setFn = function signalSetInner(v){
+	#setInner(v){
 		this.#pendingPull = false;
 		if(this.#value!==v) this.#value = v;
 	}
@@ -192,7 +192,7 @@ export class signalInstance {
 	 * This method is automatically called internally by {@link get}.
 	 * @see {@link signalObserver}
 	 */
-	record = function signalRecord(){ this.#ctrl.triggerRecording(this); }
+	record(){ this.#ctrl.triggerRecording(this); }
 	
 	/**
 	 * Notifies all observers that have this signal recorded as a dependency.
@@ -205,7 +205,7 @@ export class signalInstance {
 	 * @param {any} [oldValue] - The old value to pass to observers
 	 * @see {@link signalObserver}
 	 */
-	changed = function signalChanged(oldValue=void 0){
+	changed(oldValue=void 0){
 		this.#ctrl.triggerChange(this,oldValue,this.#value);
 	}
 	
@@ -216,7 +216,7 @@ export class signalInstance {
 	 * 
 	 * @param {any} promise The original promise
 	 */
-	#changedPromise = function signalChangedPromise(promise){
+	#changedPromise(promise){
 		if(!this.#handlingPromises.has(promise)) return;
 		let oldValue = this.#handlingPromises.get(promise);
 		if(promise===this.#promise) this.changed(oldValue);
@@ -239,7 +239,7 @@ export class signalInstance {
 	 * @see {@link signalObserver}
 	 * @see {@link signalController.computeSignalPull}
 	 */
-	get = function signalGet(){
+	get(){
 		if(this.#isGetting) return this.#value;
 		this.#isGetting = true;
 		this.record();
@@ -261,13 +261,13 @@ export class signalInstance {
 	 * @see {@link signalObserver}
 	 * @see {@link changed}
 	 */
-	set = function signalSet(value){
+	set(value){
 		if(value instanceof signalInstance) value = value.get();
 		let oldValue = this.#value;
 		if(oldValue===value) return false;
 		if(isPromise(value)){
 			if(this.#promise===value) return false;
-			this.#setFn(value);
+			this.#setInner(value);
 			this.#promise = value;
 			if(!this.#handlingPromises.has(value)){
 				let boundFn = this.#changedPromise.bind(this,value);
@@ -277,7 +277,7 @@ export class signalInstance {
 		}
 		else {
 			if(this.#promise!==void 0) this.#promise = void 0;
-			this.#setFn(value);
+			this.#setInner(value);
 			this.changed(oldValue);
 		}
 		return true;

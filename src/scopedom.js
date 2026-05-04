@@ -340,6 +340,10 @@ class ScopeDom {
 		this.onDOMReadyListeners = new Set();
 		/** @type {boolean} Flag indicating if currently executing onReady callbacks */
 		this.isDuringOnReady = false;
+		/** @type {MutationObserver|null} DOM observer for main element */
+		this.domWaitForMain = null;
+		/** @type {MutationObserver|null} DOM observer for DOM tree */
+		this.domObserver = null;
 		// Plugins
 		/** @type {object} Plugin system object */
 		this.plugins = { init:false, register:new Set(), onConnect:new Set(), onDisconnect:new Set(), onPluginAdd:new Set(), onExpression:new Set() };
@@ -359,21 +363,26 @@ class ScopeDom {
 	 * Triggers scanning and ready callbacks when main element is found.
 	 */
 	beginDomWatching(){
-		let mutObs=null, onMainElement=()=>{
-			if(!this.mainElement) this.mainElement=document.body;
-			if(mutObs) mutObs.disconnect();
-			this.watchDomTree(this.mainElement);
-			this.scanDomTree(this.mainElement);
-			if(this.options.autoReady){
-				this.setReadyOnDomLoaded();
-				this.setReadyOnRaf();
-			}
-		};
-		if(this.mainElement) onMainElement();
-		else {
-			if(document.body) return onMainElement();
-			mutObs = new MutationObserver(function domMutation(m){ if(document.body) onMainElement(); });
-			mutObs.observe(document.head.parentNode,{ __proto__:null, subtree:false, childList:true, attributes:false });
+		if(this.mainElement || document.body) return this.#domOnMainElement();
+		this.domWaitForMain = new MutationObserver(this.#domWaitForMainElement.bind(this));
+		this.domWaitForMain.observe(document.head.parentNode,{ __proto__:null, subtree:false, childList:true, attributes:false });
+	}
+	
+	#domWaitForMainElement(m){
+		if(document.body) this.#domOnMainElement();
+	}
+	
+	#domOnMainElement(){
+		if(!this.mainElement) this.mainElement = document.body;
+		if(this.domWaitForMain){
+			this.domWaitForMain.disconnect();
+			this.domWaitForMain = null;
+		}
+		this.watchDomTree(this.mainElement);
+		this.scanDomTree(this.mainElement);
+		if(this.options.autoReady){
+			this.setReadyOnDomLoaded();
+			this.setReadyOnRaf();
 		}
 	}
 	
@@ -410,6 +419,8 @@ class ScopeDom {
 		return this;
 	}
 	
+	#scopeCtrlFnArgs = ['signal','createSignal','defineSignal','assignSignals','computeSignal','proxySignal','defineProxySignal','preventUpdates','preventObservers'];
+	
 	/**
 	 * Handle scope controller function execution.
 	 * 
@@ -420,8 +431,7 @@ class ScopeDom {
 	 */
 	handleScopeCtrlFn(proxy,fn){
 		let signalCtrl = this.scopeCtrl.signalCtrl, signalMethods = Object.fromEntries(
-			['signal','createSignal','defineSignal','assignSignals','computeSignal','proxySignal','defineProxySignal','preventUpdates','preventObservers']
-			.map(k=>[k,signalCtrl[k].bind(signalCtrl)])
+			this.#scopeCtrlFnArgs.map(k=>[k,signalCtrl[k].bind(signalCtrl)])
 		);
 		fn.apply(proxy,[{ scope:proxy, instance:this, controller:this.scopeCtrl, ...signalMethods }]);
 	}
@@ -444,9 +454,9 @@ class ScopeDom {
 	 */
 	watchDomTree(element){
 		if(this.cacheWatchObservers.has(element)) return;
-		let mutObs = new MutationObserver(this.#domTreeObserver.bind(this));
-		this.cacheWatchObservers.set(element,mutObs);
-		mutObs.observe(element,{ subtree:true, childList:true, attributes:false });
+		this.domObserver = new MutationObserver(this.#domTreeObserver.bind(this));
+		this.cacheWatchObservers.set(element,this.domObserver);
+		this.domObserver.observe(element,{ subtree:true, childList:true, attributes:false });
 	}
 	
 	#domTreeObserver(muts){

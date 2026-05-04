@@ -76,7 +76,7 @@ export class signalProxy {
 	 * @param {object} target - Value to check
 	 * @returns {boolean} True if the value is an existing signalProxy
 	 */
-	static _isProxy(target){ return spProxyMap.has(target); }
+	static #isProxy(target){ return spProxyMap.has(target); }
 	
 	/**
 	 * Gets the signalInstance associated with a signalProxy.
@@ -84,7 +84,7 @@ export class signalProxy {
 	 * @param {signalProxy} proxy - The signalProxy
 	 * @returns {signalInstance} The associated signalInstance, or undefined
 	 */
-	static _getProxySignal(proxy){ return spProxyMap.get(proxy)?.targetSignal; }
+	static #getProxySignal(proxy){ return spProxyMap.get(proxy)?.targetSignal; }
 	
 	/**
 	 * Gets the target for a signalProxy.
@@ -92,7 +92,7 @@ export class signalProxy {
 	 * @param {signalProxy} proxy - The signalProxy
 	 * @returns {object} The target object
 	 */
-	static _getProxyTarget(proxy){ return spProxyMap.get(proxy)?.target; }
+	static #getProxyTarget(proxy){ return spProxyMap.get(proxy)?.target; }
 	
 	/**
 	 * Proxy handler for `has` (Reflect.has, Object.hasOwn, in operator).
@@ -103,7 +103,7 @@ export class signalProxy {
 	 * @param {string} prop - Property name to check existence of
 	 * @returns {boolean} True if the property exists on the target, false otherwise
 	 */
-	static has = function signalProxyHas(obj,prop){
+	static has(obj,prop){
 		let { target, proxies, signals } = obj;
 		if(!target) return console.warn("ScopeDom signalProxy: has() called on proxy with gc'd target",{prop}), false;
 		let hasProp = target && Reflect.has(target,prop);
@@ -129,17 +129,17 @@ export class signalProxy {
 	 * @param {object} [receiver] The receiver object (not used)
 	 * @returns {any} The property value or nested proxy; undefined if target was garbage collected
 	 * @see {@link _handleTypesGet} Type-specific handling for iterables/functions
-	 * @see {@link _proxyEnsureSignal} Signal creation/lookup logic
+	 * @see {@link #proxyEnsureSignal} Signal creation/lookup logic
 	 */
-	static get = function signalProxyGet(obj,prop,receiver){
+	static get(obj,prop,receiver){
 		let getValue, { target, targetSignal, proxies, signalCtrl } = obj;
 		if(!target) return void console.warn("ScopeDom signalProxy: get() called on proxy with gc'd target",{prop});
-		if(!signalProxy.has(obj,prop)) return void signalProxy._proxyEnsureSignal(obj,prop,void 0).get();
+		if(!signalProxy.has(obj,prop)) return void signalProxy.#proxyEnsureSignal(obj,prop,void 0).get();
 		try{ getValue = Reflect.get(target,prop,target); }catch(err){ getValue = target[prop]; }
 		let returnNow; [ getValue, returnNow ] = signalProxy._handleTypesGet(obj,prop,getValue);
 		if(returnNow) return getValue;
 		let isPrimitive = getValue!==Object(getValue);
-		let signal = signalProxy._proxyEnsureSignal(obj,prop,getValue);
+		let signal = signalProxy.#proxyEnsureSignal(obj,prop,getValue);
 		if(signal.get()!==getValue) signal.set(getValue);
 		if(isPrimitive && proxies.has(prop)) proxies.delete(prop);
 		if(isPrimitive) return getValue;
@@ -158,7 +158,7 @@ export class signalProxy {
 	 * Method Flow:
 	 * 1. Retrieve current value using Reflect.get with fallback to target[prop]
 	 * 2. Resolve any signals/proxies in the new value (eg: if setting a proxy, extract its signal)
-	 * 3. Delegate to `_handleTypesSet()` for type-specific handling (iterables)
+	 * 3. Delegate to `#handleTypesSet()` for type-specific handling (iterables)
 	 * 4. Set property on target and update signal with new value
 	 * 
 	 * @param {object} obj - The proxy object
@@ -166,22 +166,28 @@ export class signalProxy {
 	 * @param {any} value - Value to assign to the property
 	 * @param {object} [receiver] The receiver object (not used)
 	 * @returns {boolean} True if the property was set successfully on target, false otherwise
-	 * @see {@link _handleTypesSet} Type-specific handling for iterables
+	 * @see {@link #handleTypesSet} Type-specific handling for iterables
 	 */
-	static set = function signalProxySet(obj,prop,value,receiver){
+	static set(obj,prop,value,receiver){
 		let getValue, { target, targetSignal, proxies } = obj;
 		if(!target) return console.warn("ScopeDom signalProxy: set() called on proxy with gc'd target",{prop}), false;
 		try{ getValue = Reflect.get(target,prop,target); }catch(err){ getValue = target[prop]; }
 		value = resolveSignal(value);
-		value = signalProxy._handleTypesSet(obj,prop,getValue,value);
+		value = signalProxy.#handleTypesSet(obj,prop,getValue,value);
 		if(Reflect.set(target,prop,value,target)){
-			let signal = signalProxy._proxyEnsureSignal(obj,prop,getValue,value);
+			let signal = signalProxy.#proxyEnsureSignal(obj,prop,getValue,value);
 			signal.set(value);
 			if(proxies.has(prop) && value!==getValue) proxies.delete(prop);
 			return true;
 		}
 		return false;
 	}
+	
+	static #typeArrayMutators = ['pop','push','reverse','shift','unshift','splice','sort','copyWithin','fill'];
+	static #typeMapMutators = ['clear','delete','set','getOrInsert','getOrInsertComputed'];
+	static #typeSetMutators = ['add','clear','delete'];
+	static #typeWeakMapMutators = ['delete','set','getOrInsert','getOrInsertComputed'];
+	static #typeWeakSetMutators = ['add','delete'];
 	
 	/**
 	 * Handles special type-specific behavior for property access (get operations).
@@ -213,36 +219,40 @@ export class signalProxy {
 			if(target instanceof Object && prop==='valueOf') wrapRecordFn = true;
 			else if(isIterable){
 				if(target instanceof Array && hasOwn(Array.prototype,prop)){
-					if(['pop','push','reverse','shift','unshift','splice','sort','copyWithin','fill'].indexOf(prop)!==-1) wrapChangeFn = true;
+					if(signalProxy.#typeArrayMutators.indexOf(prop)!==-1) wrapChangeFn = true;
 					else wrapRecordFn = true;
 				}
 				else if(target instanceof Map && hasOwn(Map.prototype,prop)){
-					if(['clear','delete','set','getOrInsert','getOrInsertComputed'].indexOf(prop)!==-1) wrapChangeFn = true;
+					if(signalProxy.#typeMapMutators.indexOf(prop)!==-1) wrapChangeFn = true;
 					else wrapRecordFn = true;
 				}
 				else if(target instanceof Set && hasOwn(Set.prototype,prop)){
-					if(['add','clear','delete'].indexOf(prop)!==-1) wrapChangeFn = true;
+					if(signalProxy.#typeSetMutators.indexOf(prop)!==-1) wrapChangeFn = true;
 					else wrapRecordFn = true;
 				}
 				else if(target instanceof WeakMap && hasOwn(WeakMap.prototype,prop)){
-					if(['delete','set','getOrInsert','getOrInsertComputed'].indexOf(prop)!==-1) wrapChangeFn = true;
+					if(signalProxy.#typeWeakMapMutators.indexOf(prop)!==-1) wrapChangeFn = true;
 					else wrapRecordFn = true;
 				}
 				else if(target instanceof WeakSet && hasOwn(WeakSet.prototype,prop)){
-					if(['add','delete'].indexOf(prop)!==-1) wrapChangeFn = true;
+					if(signalProxy.#typeWeakSetMutators.indexOf(prop)!==-1) wrapChangeFn = true;
 					else wrapRecordFn = true;
 				}
 			}
-			if(wrapChangeFn) return [ function signalProxyFnWrapperChange(...args){
-				let result = signalProxy.apply({ target:getValue, targetSignal, signalCtrl },target,args);
-				return targetSignal.changed(), result;
-			}, true ];
-			else if(wrapRecordFn) return [ function signalProxyFnWrapperRecord(...args){
-				return signalProxy.apply({ target:getValue, targetSignal, signalCtrl },target,args);
-			}, true ];
+			if(wrapChangeFn) return [ signalProxy.#getFnWrapperChange.bind(null,target,getValue,targetSignal,signalCtrl), true ];
+			else if(wrapRecordFn) return [ signalProxy.#getFnWrapperRecord.bind(null,target,getValue,targetSignal,signalCtrl), true ];
 		}
 		// Let signalProxyGet do signal record
 		return [ getValue, false ];
+	}
+	
+	static #getFnWrapperChange(target,getValue,targetSignal,signalCtrl,...args){
+		let result = signalProxy.apply({ target:getValue, targetSignal, signalCtrl },target,args);
+		return targetSignal.changed(), result;
+	}
+	
+	static #getFnWrapperRecord(target,getValue,targetSignal,signalCtrl,...args){
+		return signalProxy.apply({ target:getValue, targetSignal, signalCtrl },target,args);
 	}
 	
 	/**
@@ -260,9 +270,9 @@ export class signalProxy {
 	 * @param {any} value - New value being assigned to the property
 	 * @returns {any} The value to set on the target
 	 */
-	static _handleTypesSet(obj,prop,getValue,value){
+	static #handleTypesSet(obj,prop,getValue,value){
 		let { target, targetSignal, isIterable } = obj;
-		if(isIterable && targetSignal && target instanceof Array && prop==='length') targetSignal.changed();
+		if(isIterable && targetSignal && target instanceof Array && prop==="length") targetSignal.changed();
 		else if(isIterable && targetSignal && typeof prop==="string" && prop>=0) targetSignal.changed(); // Index props are strings
 		return value;
 	}
@@ -284,7 +294,7 @@ export class signalProxy {
 	 * @param {any} [newValue=currentValue] New value being assigned (defaults to currentValue)
 	 * @returns {signalInstance} The existing or newly created signal instance for this property
 	 */
-	static _proxyEnsureSignal(obj,prop,currentValue=void 0,newValue=currentValue){
+	static #proxyEnsureSignal(obj,prop,currentValue=void 0,newValue=currentValue){
 		let { target, signals, signalCtrl } = obj;
 		let signal = signals.get(prop);
 		if(signal!==void 0) return signal;
@@ -339,7 +349,7 @@ export class signalProxy {
 	 * @param {any[]} argumentsList - Array of arguments to pass to the function
 	 * @returns {any} Either the raw function result if primitive, or a new signalProxy wrapping it for reactivity
 	 */
-	static apply = function signalProxyApply(obj,thisArgument,argumentsList){
+	static apply(obj,thisArgument,argumentsList){
 		let { target, targetSignal, signalCtrl } = obj;
 		if(!target) return void console.warn("ScopeDom signalProxy: apply() called on proxy with gc'd target",{thisArgument,argumentsList});
 		let thisTarget = spProxyMap.get(thisArgument)?.target || thisArgument;
@@ -423,30 +433,33 @@ export class signalProxy {
 	 * @returns {boolean} True if the target was successfully made non-extensible, false otherwise
 	 */
 	static preventExtensions(obj){ return Reflect.preventExtensions(obj.target); }
+	
+	/**
+	 * Resolves a signalProxy or signalInstance to its signalInstance or signal value.
+	 * 
+	 * Method Flow:
+	 * 1. If value is a signalProxy, extract its targetSignal and continue processing with that as `value`
+	 * 2. If value is a signalInstance, optionally record it on the observer, then either return it (strict mode) or get() its value
+	 * 3. In strict=false mode, after getting the signal instance's value, if that resolved to another proxy, extract its target
+	 * 
+	 * @param {any} value - The value to resolve (can be signalProxy, signalInstance, or any other type)
+	 * @param {signalObserver} [signalObs=null] - Optional observer to record the signal as a dependency during resolution
+	 * @param {boolean} [strict=false] - If true, only return signalInstance, otherwise returns null
+	 * @returns {any} The resolved value, either a signalInstance (strict=true), its underlying value, or the original non-signal value
+	 */
+	static _resolveSignal(value,signalObs=null,strict=false){
+		if(signalProxy.#isProxy(value)) value = signalProxy.#getProxySignal(value);
+		if(value instanceof signalInstance){
+			if(signalObs) signalObs.recordSignal(value);
+			if(!strict){
+				value = value.get();
+				if(signalProxy.#isProxy(value)) value = signalProxy.#getProxyTarget(value);
+			}
+		}
+		if(strict && !(value instanceof signalInstance)) return null;
+		return value;
+	};
 }
 
-/**
- * Resolves a signalProxy or signalInstance to its signalInstance or signal value.
- * 
- * Method Flow:
- * 1. If value is a signalProxy, extract its targetSignal and continue processing with that as `value`
- * 2. If value is a signalInstance, optionally record it on the observer, then either return it (strict mode) or get() its value
- * 3. In strict=false mode, after getting the signal instance's value, if that resolved to another proxy, extract its target
- * 
- * @param {any} value - The value to resolve (can be signalProxy, signalInstance, or any other type)
- * @param {signalObserver} [signalObs=null] - Optional observer to record the signal as a dependency during resolution
- * @param {boolean} [strict=false] - If true, only return signalInstance, otherwise returns null
- * @returns {any} The resolved value, either a signalInstance (strict=true), its underlying value, or the original non-signal value
- */
-export const resolveSignal = function(value,signalObs=null,strict=false){
-	if(signalProxy._isProxy(value)) value = signalProxy._getProxySignal(value);
-	if(value instanceof signalInstance){
-		if(signalObs) signalObs.recordSignal(value);
-		if(!strict){
-			value = value.get();
-			if(signalProxy._isProxy(value)) value = signalProxy._getProxyTarget(value);
-		}
-	}
-	if(strict && !(value instanceof signalInstance)) return null;
-	return value;
-};
+/** @type {typeof signalProxy._resolveSignal} */
+export const resolveSignal = signalProxy._resolveSignal;

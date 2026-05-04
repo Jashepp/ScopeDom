@@ -160,14 +160,15 @@ export class signalController {
 	 */
 	isolateRecording(fn){
 		if(!(fn instanceof Function)) throw new TypeError("isolateRecording fn must be a Function (callback)");
-		let self = this;
-		return function signalIsolatedRecording(...args){
-			let prev = Array.from(self.#observersRecording);
-			self.#observersRecording.clear();
-			let result; try{ result=fn(...args); }catch(err){ console.error(err); }
-			for(let observer of prev) self.#observersRecording.add(observer);
-			return result;
-		};
+		return this.#isolatedSignalRecording.bind(this,fn);
+	}
+	
+	#isolatedSignalRecording(fn,...args){
+		let prev = Array.from(this.#observersRecording);
+		this.#observersRecording.clear();
+		let result; try{ result=fn(...args); }catch(err){ console.error(err); }
+		for(let observer of prev) this.#observersRecording.add(observer);
+		return result;
 	}
 	
 	/**
@@ -254,13 +255,25 @@ export class signalController {
 		let { configurable=true, enumerable=true, get:oGet=null, set:oSet=null } = { __proto__:null, ...descriptor };
 		let signal = value instanceof signalInstance ? value : this.createSignal(value), sGet, sSet;
 		if(useOriginal && oSet){
-			if(oGet) sGet = function defineSignalGet(){ signal.set(oGet.apply(obj)); return signal.get(); };
-			sSet = function defineSignalSet(v){ oSet.apply(obj,[v]); if(oGet){ v=oGet.apply(obj); } return signal.set(v); };
+			if(oGet) sGet = this.#defineSignalGetterWrapper.bind(this,signal,oGet,obj);
+			sSet = this.#defineSignalSetterWrapper.bind(this,signal,oGet,obj);
 		}
-		if(!sGet) sGet = signal.get.bind(signal); if(!sSet) sSet = signal.set.bind(signal);
+		if(!sGet) sGet = signal.get.bind(signal);
+		if(!sSet) sSet = signal.set.bind(signal);
 		sGet[signalSymb] = sSet[signalSymb] = signal;
 		mtCacheDefineProperty(obj,prop,{ __proto__:null, configurable, enumerable, get:sGet, set:sSet });
 		return signal;
+	}
+	
+	#defineSignalGetterWrapper(signal,oGet,obj){
+		signal.set(oGet.apply(obj));
+		return signal.get();
+	}
+	
+	#defineSignalSetterWrapper(signal,oGet,obj){
+		oSet.apply(obj,[v]);
+		if(oGet) v = oGet.apply(obj);
+		return signal.set(v);
 	}
 	
 	/**
@@ -293,15 +306,17 @@ export class signalController {
 		let obs = this.createObserver(options);
 		obs.signalsIgnore.add(computeSignal);
 		let recordingFn = this.isolateRecording(obs.wrapRecorder(fn));
-		let runFn = function signalComputePushFn(){
-			obs.clearSignals();
-			computeSignal.set(recordingFn());
-		};
+		let runFn = this.#computeSignalPushListener.bind(this,obs,computeSignal,recordingFn);
 		obs.addListener(runFn);
-		try{ runFn(obs,null); } catch(err){ console.error(err); }
+		try{ runFn(); } catch(err){ console.error(err); }
 		let result = [ computeSignal, obs, obs.clear.bind(obs) ];
 		result[disposeSymbol] = result[2];
 		return result;
+	}
+	
+	#computeSignalPushListener(obs,computeSignal,recordingFn){
+		obs.clearSignals();
+		computeSignal.set(recordingFn());
 	}
 	
 	/**
@@ -321,24 +336,27 @@ export class signalController {
 		let computeSignal = options?.signal || this.createSignal(void 0);
 		let obs = this.createObserver(options);
 		obs.signalsIgnore.add(computeSignal);
-		let isUpdating = false;
-		let updateFn = function signalUpdate(depObserver,depSignal,oldValue,newValue){
-			if(isUpdating) return;
-			isUpdating = true;
-			computeSignal.invalidatePull();
-			computeSignal.changed(oldValue);
-			isUpdating = false;
-		};
+		let state = { isUpdating: false }
 		let recordingFn = this.isolateRecording(obs.wrapRecorder(fn));
-		computeSignal.addPullListener(function signalComputePullFn(){
-			obs.clearSignals();
-			computeSignal.set(recordingFn());
-		});
-		obs.addListener(updateFn);
+		computeSignal.addPullListener(this.#computeSignalPullListener.bind(this,obs,computeSignal,recordingFn));
+		obs.addListener(this.#computeSignalPullUpdater.bind(this,state,computeSignal));
 		computeSignal.invalidatePull();
 		let result = [ computeSignal, obs, obs.clear.bind(obs) ];
 		result[disposeSymbol] = result[2];
 		return result;
+	}
+	
+	#computeSignalPullListener(obs,computeSignal,recordingFn){
+		obs.clearSignals();
+		computeSignal.set(recordingFn());
+	}
+	
+	#computeSignalPullUpdater(state,computeSignal,depObserver,depSignal,oldValue,newValue){
+		if(state.isUpdating) return;
+		state.isUpdating = true;
+		computeSignal.invalidatePull();
+		computeSignal.changed(oldValue);
+		state.isUpdating = false;
 	}
 	
 	/**
@@ -395,18 +413,34 @@ export class signalController {
 	defineProxySignal(obj,prop,value,signal=null,silentFallback=false){
 		if(!silentFallback && value!==Object(value)) throw new TypeError("defineProxySignal target must not be a primitive, try defineSignal instead");
 		if(!signal) signal = new signalInstance(this,value);
-		let set;
+		let set, state = { value };
 		if(value===Object(value)){
 			value = new signalProxy(value,this,signal);
-			set = (v)=>(this.defineProxySignal(obj,prop,v,signal,true),true);
+			set = this.#defineProxySignalSetter.bind(this,signal,obj,prop);
 		} else {
-			set = (v)=>(v===Object(v) ? (this.defineProxySignal(obj,prop,v,signal,true),true) : (signal.set(value=v),true) );
+			set = this.#defineProxySignalSetterFallback.bind(this,state,signal,obj,prop);
 		}
-		let get = ()=>(signal.record(),value);
+		let get = this.#defineProxySignalGetter.bind(this,signal,state);
 		get[signalSymb] = set[signalSymb] = signal;
 		mtCacheDefineProperty(obj,prop,{ __proto__:null, configurable:true, enumerable:true, get, set });
 		signal.record(); signal.set(value);
 		return value;
+	}
+	
+	#defineProxySignalGetter(signal,state){
+		signal.record();
+		return state.value;
+	}
+	
+	#defineProxySignalSetter(signal,obj,prop,newValue){
+		this.defineProxySignal(obj,prop,newValue,signal,true);
+		return true;
+	}
+	
+	#defineProxySignalSetterFallback(state,signal,obj,prop,newValue){
+		if(newValue===Object(newValue)) this.defineProxySignal(obj,prop,newValue,signal,true);
+		else signal.set(state.value=newValue);
+		return true;
 	}
 	
 }
