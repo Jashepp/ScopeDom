@@ -352,15 +352,18 @@ export class execExpressionProxy {
 	 */
 	static get(obj,prop,receiver){
 		if(prop===Symbol.unscopables) return obj.unscopables;
-		for(let ms of obj.mainScopes) if(hasOwn(ms,prop)) return execExpressionProxy.#getResolve(obj,ms,prop,ms);
+		for(let s of obj.mainScopes) if(hasOwn(s,prop)) return execExpressionProxy.#getResolve(obj,s,prop,s);
 		for(let s of obj.getScopes){
 			if(obj.scopeUseOwn.has(s)){ if(hasOwn(s,prop)) return execExpressionProxy.#getResolve(obj,s,prop,s); }
 			else if(prop in s) return execExpressionProxy.#getResolve(obj,s,prop,s);
 		}
-		for(let ms of obj.mainScopes) if(prop in ms) return execExpressionProxy.#getResolve(obj,ms,prop,ms);
+		for(let s of obj.mainScopes) if(prop in s) return execExpressionProxy.#getResolve(obj,s,prop,s);
 		if(obj.globalObj && hasOwn(obj.globalObj,prop)){
 			if(obj.globalsHide) return obj.globalCatch(prop), false;
 			else return execExpressionProxy.#getResolve(obj,obj.globalObj,prop,obj.globalObj);
+		}
+		if(obj.useSignalProxy && obj.signalCtrl){
+			for(let s of obj.mainScopes) return obj.signalCtrl.defineProxySignal(s,prop,void 0,null,true);
 		}
 		return void 0;
 	}
