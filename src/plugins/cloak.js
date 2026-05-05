@@ -75,7 +75,7 @@ export class pluginCloak {
 		if(runExpFn()) return;
 		// Swap DOM
 		if(domSwap && element.nodeName!=='TEMPLATE'){
-			state.anchor = anchor = document.createComment(' Cloak-Anchor: '+element.cloneNode(false).outerHTML+' ');
+			state.anchor = anchor = document.createComment(` Cloak-Anchor ${instance.dev?element.cloneNode(false).outerHTML:''} `);
 			state.scope.$anchor = anchor;
 			state.scope.loaded = instance.isElementLoaded.bind(instance,anchor,false,false),
 			element.replaceWith(anchor);

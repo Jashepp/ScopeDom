@@ -721,7 +721,7 @@ export class pluginParse {
 		// If textnode is not visible, some browsers (FF) remove it, so anchor it with comment
 		let visible = isTextNodeSolid(result);
 		if(!visible && !obj.anchor){
-			obj.anchor = document.createComment(' Parse-Anchor: '+obj.original+' '); //obj.anchor.$parseTextNode=node;
+			obj.anchor = document.createComment(` Parse-Anchor ${this.instance.dev?obj.original:''} `);
 			this.instance.elementScopeSetAlias(obj.anchor,node);
 			node.parentNode.insertBefore(obj.anchor,node.nextSibling);
 		}

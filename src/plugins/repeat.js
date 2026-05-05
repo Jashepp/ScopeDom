@@ -187,7 +187,7 @@ export class pluginRepeat {
 		// Prepare the trigger execution function
 		let triggerExec = state.triggerExec = this.#runExpressions.bind(this,plugInfo,state,value);
 		// Create end anchor comment
-		let commentEnd = document.createComment(' Repeat-End-Anchor: '+value+' ');
+		let commentEnd = document.createComment(` Repeat-End-Anchor ${instance.dev?value:''} `);
 		// <any $repeat:use="element"> Handle use attribute pointing to external element
 		if(useElementOption.attribOption){
 			let needsResolving = (useElementOption.execResult instanceof Error || useElementOption.value===null || (typeof useElementOption.value==="string" && useElementOption.value.length>0));
@@ -211,7 +211,7 @@ export class pluginRepeat {
 				if(useElementOption.nodeName==='TEMPLATE') mainTemplate = useElementOption;
 				else {
 					// Insert from-anchor and mark element for template creation
-					useElementOption.parentNode.insertBefore(fromElementAnchor=document.createComment(' Repeat-From-Anchor '),useElementOption);
+					useElementOption.parentNode.insertBefore(fromElementAnchor=document.createComment(` Repeat-From-Anchor `),useElementOption);
 					fromElement = useElementOption;
 				}
 				element.appendChild(anchorEnd=commentEnd);
@@ -246,7 +246,7 @@ export class pluginRepeat {
 		}
 		// Create start anchor if not already created
 		if(anchorEnd && !anchorStart){
-			anchorEnd.parentNode.insertBefore(anchorStart=document.createComment(' Repeat-Start-Anchor: '+value+' '),anchorEnd);
+			anchorEnd.parentNode.insertBefore(anchorStart=document.createComment(` Repeat-Start-Anchor ${instance.dev?value:''} `),anchorEnd);
 		}
 		// Remove fromElement & Create template if ready
 		if(!mainTemplate && fromElement && !elementChildren){
@@ -328,7 +328,7 @@ export class pluginRepeat {
 			fromElementAnchor.parentNode.insertBefore(fromElement,fromElementAnchor);
 			fromElementAnchor.remove();
 		}
-		anchorStart.parentNode.insertBefore(document.createComment(' Repeat-Use: '+(newElement.cloneNode(false).outerHTML||'Node: '+newElement.textContent)+' '),anchorStart);
+		anchorStart.parentNode.insertBefore(document.createComment(` Repeat-Use ${this.instance.dev?(newElement.cloneNode(false).outerHTML||'Node: '+newElement.textContent):''} `),anchorStart);
 		mainTemplate = state.mainTemplate = document.createElement('template');
 		this.#stateMap.set(mainTemplate,state);
 		if(includeNodeOption) mainTemplate.content.appendChild(newElement);
@@ -554,7 +554,7 @@ export class pluginRepeat {
 			}
 			domArr[i] = nodes;
 			// Anchor - Create or update anchor comment node
-			let anchorData = ' Repeat-Item-Anchor: '+(isArr?'Index '+key:'Key '+key)+' ';
+			let anchorData = ` Repeat-Item-Anchor ${instance.dev?(isArr?'Index '+key:'Key '+key):''} `;
 			if(!anchor) anchor = document.createComment(anchorData);
 			else if(anchor.data!==anchorData) anchor.data = anchorData;
 			anchorArr[i] = anchor;

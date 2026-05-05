@@ -121,7 +121,7 @@ export class pluginIf {
 		if(targetAttrib.$pluginIfMoved) return;
 		targetAttrib.$pluginIfMoved = true;
 		// Move template->nodes to template->template->nodes
-		element.parentNode.insertBefore(document.createComment(' If-Move: '+element.cloneNode(false).outerHTML+' '),element);
+		element.parentNode.insertBefore(document.createComment(` If-Move ${this.instance.dev?element.cloneNode(false).outerHTML:''} `),element);
 		let template = document.createElement('template');
 		template.content.appendChild(element.content.cloneNode(true));
 		for(let e of Array.from(element.content.childNodes)) element.content.removeChild(e);
@@ -654,7 +654,7 @@ export class pluginIf {
 			if(defaultDisplay!==null){ element.style.display=defaultDisplay; defaultDisplay=null; }
 			// Check Anchor
 			if(!anchor){
-				state.anchor = anchor = document.createComment(' If-Anchor: '+element.cloneNode(false).outerHTML+' ');
+				state.anchor = anchor = document.createComment(` If-Anchor ${instance.dev?element.cloneNode(false).outerHTML:''} `);
 			}
 			if(anchor && !nowShowing){
 				this.#stateMap.set(anchor,state);
@@ -730,8 +730,8 @@ export class pluginIf {
 		if(!isElementLoaded(element)){ instance.onElementLoaded(element,this.#runIfExpressions.bind(this,plugInfo,attrib,state,expression)); return; }
 		// Create Anchors
 		if(!tplAnchorStart || !tplAnchorEnd){
-			tplAnchorStart = state.tplAnchorStart = state.tplAnchorStart||document.createComment(' If-Start-Anchor: '+element.nodeName+' '+attribute+' '+(expression?.length>0?expression+' ':''));
-			tplAnchorEnd = state.tplAnchorEnd = state.tplAnchorEnd||document.createComment(' If-End-Anchor ');
+			tplAnchorStart = state.tplAnchorStart = state.tplAnchorStart||document.createComment(` If-Start-Anchor ${instance.dev?element.nodeName+' '+attribute+' '+(expression?.length>0?expression+'':''):''} `);
+			tplAnchorEnd = state.tplAnchorEnd = state.tplAnchorEnd||document.createComment(` If-End-Anchor `);
 			state.anchor = tplAnchorEnd; // alias, but dont add to stateMap
 			this.#stateMap.set(tplAnchorStart,state);
 			this.#stateMap.set(tplAnchorEnd,state);

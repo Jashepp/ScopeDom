@@ -344,6 +344,8 @@ class ScopeDom {
 		this.domWaitForMain = null;
 		/** @type {MutationObserver|null} DOM observer for DOM tree */
 		this.domObserver = null;
+		/** @type {boolean} */
+		this.dev = !!this.options.dev;
 		// Plugins
 		/** @type {object} Plugin system object */
 		this.plugins = { init:false, register:new Set(), onConnect:new Set(), onDisconnect:new Set(), onPluginAdd:new Set(), onExpression:new Set() };
