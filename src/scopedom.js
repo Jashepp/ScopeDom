@@ -16,7 +16,7 @@ import {
 	execExpression, execExpressionProxy,
 } from "./core/exec.js";
 import {
-	signalController, signalObserver, signalProxy, signalInstance, resolveSignal,
+	signalController, signalObserver, signalProxy, signalInstance, resolveSignal, signalSymb,
 } from "./core/signal.js";
 import {
 	scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
@@ -426,7 +426,7 @@ class ScopeDom {
 		return this;
 	}
 	
-	#scopeCtrlFnArgs = ['signal','createSignal','defineSignal','assignSignals','computeSignal','proxySignal','defineProxySignal','preventUpdates','preventObservers'];
+	#scopeCtrlFnArgs = ['signal','createSignal','defineSignal','assignSignals','computeSignal','proxySignal','defineProxySignal','preventUpdates','preventObservers','resolveSignal'];
 	
 	/**
 	 * Handle scope controller function execution.

@@ -443,4 +443,9 @@ export class signalController {
 		return true;
 	}
 	
+	/** @type {typeof signalProxy._resolveSignal} */
+	resolveSignal(value,signalObs,strict){
+		return resolveSignal(value,signalObs,strict);
+	}
+	
 }

@@ -16,7 +16,7 @@ import {
 	execExpression, execExpressionProxy,
 } from "./exec.js";
 import {
-	signalController, signalObserver, signalProxy, signalInstance, resolveSignal,
+	signalController, signalObserver, signalProxy, signalInstance, resolveSignal, signalSymb,
 } from "./signal.js";
 import ScopeDom from "../scopedom.js";
 
