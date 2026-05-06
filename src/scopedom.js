@@ -21,6 +21,9 @@ import {
 import {
 	scopeInstance, scopeBase, scopeControllerContext, scopeController, scopeElementContext, scopeElementController,
 } from "./core/scope.js";
+import {
+	builtinAttributes
+} from "./core/builtins.js";
 
 /**
  * Disables the document.defaultView property to prevent access.
@@ -344,6 +347,8 @@ class ScopeDom {
 		this.domWaitForMain = null;
 		/** @type {MutationObserver|null} DOM observer for DOM tree */
 		this.domObserver = null;
+		/** @type {builtinAttributes|null} Built-in attributes handler */
+		this.builtinAttribs = new builtinAttributes(this);
 		/** @type {boolean} */
 		this.dev = !!this.options.dev;
 		// Plugins
@@ -1073,216 +1078,12 @@ class ScopeDom {
 	 * @param {HTMLElement} element The element being connected
 	 */
 	triggerElementConnect(element){
-		let attribs = this.elementAttribs(element), elementScopeCtrl, queue=[];
-		if(attribs && attribs.size>0){
-			elementScopeCtrl = this.elementScopeCtrl(element);
-			// Swap
-			if(element.nodeName==='TEMPLATE' && attribs.has('swap')){
-				let anchor = document.createComment(' Template-Swap-Anchor: '+element.cloneNode(false).outerHTML+' ');
-				element.parentNode.replaceChild(anchor,element);
-				this.onElementLoaded(anchor,()=>{
-					let swap = attribs.get('swap'), fragment=element.content, dom=fragment;
-					element.removeAttribute(swap.attribute);
-					if(swap?.value?.length>0){
-						dom = document.createElement(swap.value);
-						for(let a of element.attributes) dom.attributes.setNamedItem(a.cloneNode(false));
-						dom.appendChild(fragment);
-					}
-					anchor.parentNode.replaceChild(dom,anchor);
-				});
-				return;
-			}
-			// Scope
-			let scopeAttrib = attribs.get('scope'), scopeNamedAttrib = attribs.get('scope name');
-			if(scopeAttrib || scopeNamedAttrib){
-				if(scopeAttrib && scopeNamedAttrib && scopeNamedAttrib.options.size>0) scopeAttrib.options = new Map([...scopeAttrib.options,...scopeNamedAttrib.options]);
-				if(!scopeAttrib) scopeAttrib = scopeNamedAttrib;
-				let options = this.elementAttribOptionsWithDefaults(element,scopeAttrib);
-				if(scopeAttrib.value===null) this.elementAttribFallbackOptionValue(scopeAttrib,['isolate']);
-				let isolated = options.get('isolate'), { value, attribute:$attribute } = scopeAttrib; // After fallback
-				let exp = value, extra = { __proto__:null, $attribute }, expOpts = { __proto__:null, run:true, useReturn:true };
-				// Prepare Named Scope
-				if(scopeNamedAttrib){
-					if(scopeNamedAttrib.value?.length>0) value = scopeNamedAttrib.value;
-					let name = value, ctrl = this.namedControllers.get(name);
-					if(!ctrl){ console.warn(`ScopeDom: scopeController "${name}" doesn't exist`); return; }
-					if(ctrl.element && ctrl.element!==element){ console.warn(`ScopeDom: scopeController "${name}" is already in use`,{ ctrlElement:ctrl.element, newElement:element }); return; }
-					ctrl.element = element;
-					extra = { __proto__:null, _ctrlFn:ctrl.fn };
-					exp = `{ __proto__:null, _ctrlFn, $scopeElement:$this }`;
-				}
-				// New Scope
-				if(exp!==null){
-					// Run new scope expression normally, with parent scope
-					let { result } = this.elementExecExp(elementScopeCtrl,exp,extra,expOpts);
-					result = result ? Object(result) : void 0;
-					let originalScopeCtrl = elementScopeCtrl; // Use originalScopeCtrl as $scopeParent
-					if(isolated) this.elementIsolatedScopes.add(element);
-					if(isolated) elementScopeCtrl = this.elementNewIsolatedScopeCtrl(element,result||void 0,originalScopeCtrl,true);
-					else elementScopeCtrl = this.elementNewScopeCtrl(element,result||void 0,originalScopeCtrl,true);
-				}
-				// Run Named Scope Controller
-				if(scopeNamedAttrib){
-					expOpts = { __proto__:null, ...expOpts, fnThis:null, useReturn:false }; // fnThis:null sets 'this' as proxy
-					exp = `((fn)=>{ this._ctrlFn=void 0; instance.handleScopeCtrlFn(this,fn); })(_ctrlFn);`;
-					this.elementExecExp(elementScopeCtrl,exp,{ __proto__:null, instance:this },expOpts);
-				}
-			}
-			// Other built-in attribs
-			for(let [attribName,attrib] of attribs){
-				let { nameParts, value } = attrib;
-				if(nameParts[0]==='default') continue;
-				let options = this.elementAttribOptionsWithDefaults(element,attrib);
-				// Init / Connect
-				if(nameParts.length===1){
-					let [ name ] = nameParts;
-					if(name==='init' || name==='connect'){
-						if(value===null) value = this.elementAttribFallbackOptionValue(attrib,['raf','instant']);
-						let { attribute:$attribute } = attrib;
-						let raf = options.get('raf'), instant = options.get('instant');
-						if(value?.length>0){
-							let { runFn:connectCB } = this.elementExecExp(elementScopeCtrl,value,{ __proto__:null, $attribute },{ __proto__:null, run:false });
-							queue.push(function attribConnect(){
-								if(raf && !timing.isDuringRAF) timing.onceAnimation(element,$attribute,connectCB);
-								else if(instant) connectCB();
-								else timing.deferTask(connectCB);
-							});
-							continue;
-						}
-					}
-				}
-				// Listen for Update Scope
-				if(nameParts.length===1 || nameParts.length===2){
-					let [ type, name ] = nameParts, suffix = null;
-					if(type==='update' && value===null){
-						value = this.elementAttribFallbackOptionValue(attrib,['before','after']);
-						if(options.get('before')) suffix=':before';
-						if(options.get('after')) suffix=':after';
-					}
-					if(type==='update' && value?.length>0){
-						let { attribute:$attribute } = attrib;
-						let { runFn:updateCB } = this.elementExecExp(elementScopeCtrl,value,{ __proto__:null, $attribute },{ __proto__:null, run:false });
-						// Register events straight away
-						let evt = '$update'+(name?.length>0?'-'+name:'')+(suffix!==null?suffix:'');
-						let removeListener = elementScopeCtrl.ctrl.$on(evt,()=>updateCB(),{},true);
-						this.registerElementRelatedEvent(element,removeListener);
-						continue;
-					}
-				}
-				// Class Attribute
-				if(nameParts.length===1){
-					let [ name ] = nameParts;
-					if(name==='class' && value!==null){
-						let { attribute:$attribute } = attrib;
-						let obs = this.scopeCtrl.signalCtrl.createObserver();
-						let defaultClasses = element.getAttribute('class') ?? '';
-						let { runFn } = this.elementExecExp(elementScopeCtrl,value,{ __proto__:null, $attribute, $original:defaultClasses },{ __proto__:null, run:false, useReturn:true });
-						runFn = obs.wrapRecorder(runFn);
-						function computeAttribClass(){
-							obs.clearSignals();
-							let result = runFn();
-							// If array, simply append it after default classes
-							if(result instanceof Array || result instanceof Set){
-								let classList = Array.from(result).filter(k=>typeof k==='string' && k.length>0);
-								return defaultClasses+' '+classList.join(' ');
-							}
-							// If object or map, disable any existing classes if needed, and add new classes
-							else if(result instanceof Map || result===Object(result)){
-								let newClassList = new Set(defaultClasses.split(' '));
-								let classObj = Object.entries(result).filter(([k,v])=>typeof k==='string' && k.length>0);
-								for(let [k,v] of classObj){
-									if(!v && newClassList.has(k)) newClassList.delete(k);
-									else if(v) newClassList.add(k);
-								}
-								return Array.from(newClassList).join(' ');
-							}
-						};
-						function renderAttribClass(newClassName){
-							if(newClassName!==void 0) element.className = newClassName;
-						}
-						function updateAttribClass(){
-							timing.queueComputeThenRender(computeAttribClass,renderAttribClass);
-						}
-						queue.push(updateAttribClass);
-						obs.addListener(updateAttribClass);
-						this.registerElementRelatedEvent(element,obs.clear.bind(obs));
-						let removeListener = elementScopeCtrl.ctrl.$on('$update',updateAttribClass,{},true);
-						this.registerElementRelatedEvent(element,removeListener);
-						continue;
-					}
-				}
-				// Signal Attribute (lowercase keys)
-				if(nameParts.length===2){
-					let [ name, key ] = nameParts;
-					if(name==='signal' && key?.length>0){
-						let { attribute:$attribute } = attrib, watchOpt = options.get('watch'), computeOpt = options.get('compute');
-						// Watch Signal
-						let watchValue = watchOpt?.value?.length>0 ? watchOpt.value : value;
-						if(watchValue?.length>0 && !watchOpt.isDefault && (!computeOpt || computeOpt?.value!==watchValue)){
-							let { signal, expFn } = this.ensureExpressionSignal(element,key);
-							if(signal){
-								let obs = this.scopeCtrl.signalCtrl.createObserver(); obs.recordSignal(signal);
-								let oldValue, extra = { __proto__:null, $attribute, get $value(){ return signal?.get(); }, get $oldValue(){ return oldValue; } };
-								let { runFn:watchFn } = this.elementExecExp(elementScopeCtrl,watchValue,extra,{ __proto__:null, run:false });
-								watchFn = obs.wrapRecorder(watchFn);
-								obs.addListener(function attribSignalWatchValue(obs,s,o){ oldValue=o; watchFn(); });
-								this.registerElementRelatedEvent(element,obs.clear.bind(obs));
-							}
-						}
-						// Compute Signal
-						if(computeOpt?.value?.length>0 && !computeOpt.isDefault){
-							let { signal } = this.ensureExpressionSignal(element,key);
-							if(signal){
-								let { runFn:computeFn } = this.elementExecExp(elementScopeCtrl,computeOpt.value,{ __proto__:null, $attribute },{ __proto__:null, run:false, useReturn:true });
-								let [ _, obs, clear ] = this.scopeCtrl.signalCtrl.computeSignal(function attribSignalCompute(){ return resolveSignal(computeFn()); },{ pull:true, signal });
-								this.registerElementRelatedEvent(element,clear);
-							}
-						}
-					}
-				}
-				// Events
-				if(nameParts.length===2){
-					let [ type, eventName ] = nameParts;
-					if(type==='on'){ nameParts = [ type,'dom',eventName ]; }
-					else if(type==='once'){ nameParts = [ type,'dom',eventName ]; }
-				}
-				if(nameParts.length===3 && (nameParts[0]==='on' || nameParts[0]==='once')){
-					let [ type, target, eventName ] = nameParts;
-					let evtBase=null, evtMethod=null, evtTarget=null;
-					if(type==='on' && target==='dom'){ evtBase = elementScopeCtrl; evtMethod = '$onDom'; }
-					else if(type==='once' && target==='dom'){ evtBase = elementScopeCtrl; evtMethod = '$onceDom'; }
-					else if(type==='on' && target==='scope'){ evtBase = elementScopeCtrl.ctrl; evtMethod = '$on'; }
-					else if(type==='once' && target==='scope'){ evtBase = elementScopeCtrl.ctrl; evtMethod = '$once'; }
-					else if(type==='on' && target==='window'){ evtBase = elementScopeCtrl.ctrl; evtMethod = '$onTarget'; evtTarget=window; }
-					else if(type==='once' && target==='window'){ evtBase = elementScopeCtrl.ctrl; evtMethod = '$onceTarget'; evtTarget=window; }
-					else if(type==='on' && target==='document'){ evtBase = elementScopeCtrl.ctrl; evtMethod = '$onTarget'; evtTarget=document; }
-					else if(type==='once' && target==='document'){ evtBase = elementScopeCtrl.ctrl; evtMethod = '$onceTarget'; evtTarget=document; }
-					if(evtBase && evtMethod){
-						if(value===null) value = this.elementAttribFallbackOptionValue(attrib,['raf','instant','pd']);
-						let { attribute:$attribute } = attrib;
-						let raf = options.get('raf'), instant = options.get('instant'), pd = options.get('pd');
-						if(value?.length>0){
-							let self=this, { runFn:eventCB, firstScope } = this.elementExecExp(elementScopeCtrl,value,{ __proto__:null, $attribute },{ __proto__:null, run:false });
-							/** @param {Event} event */
-							function eventListener(event){
-								if(pd) event.preventDefault();
-								firstScope.$event = event;
-								if(timing.isDuringRAF || self.isDuringOnReady) eventCB();
-								else if(raf) timing.onceAnimation(element,$attribute,eventCB);
-								else if(instant) eventCB();
-								else timing.deferTask(eventCB);
-								if(pd) return false;
-							};
-							// Register events straight away
-							let removeListener = evtTarget ? evtBase[evtMethod](evtTarget,eventName,eventListener,{},true) : evtBase[evtMethod](eventName,eventListener,{},true);
-							this.registerElementRelatedEvent(element,removeListener);
-							continue;
-						}
-					}
-				}
-			}
-		}
-		if(queue.length>0) this.onReady(function onReadyConnect(){ for(let cb of queue) cb.apply(this); }.bind(this),false);
+		let attribs = this.elementAttribs(element);
+		if(!attribs || attribs.size===0) return;
+		let elementScopeCtrl = this.elementScopeCtrl(element);
+		// Handle built-in attributes
+		let pass = this.builtinAttribs.onConnect(element,attribs,elementScopeCtrl);
+		if(pass===false) return;
 		// Run plugins onConnect
 		this.pluginsOnConnect(new pluginOnElementPlug(this,element,elementScopeCtrl,attribs));
 	}
@@ -1294,30 +1095,12 @@ class ScopeDom {
 	 */
 	triggerElementDisconnect(element){
 		if(!this.cacheConnectedNodes.has(element)) return;
-		let attribs = this.elementAttribs(element,true,false), elementScopeCtrl;
-		if(attribs && attribs.size>0){
-			elementScopeCtrl = this.elementScopeCtrl(element);
-			for(let [attribName,attrib] of attribs){
-				let { nameParts, value, attribute:$attribute } = attrib;
-				if(nameParts[0]==='default') continue;
-				let options = this.elementAttribOptionsWithDefaults(element,attrib);
-				if(nameParts.length===1){
-					let [ name ] = nameParts;
-					if(name==='deinit' || name==='disconnect'){
-						if(value===null) value = this.elementAttribFallbackOptionValue(attrib,['raf','instant']);
-						let { attribute:$attribute } = attrib;
-						let raf = options.get('raf'), instant = options.get('instant');
-						if(value?.length>0){
-							let { runFn:disconnectCB } = this.elementExecExp(elementScopeCtrl,value,{ __proto__:null, $attribute },{ __proto__:null, run:false });
-							if(raf && !timing.isDuringRAF) timing.requestAnimation(disconnectCB);
-							else if(instant || timing.isDuringRAF) disconnectCB();
-							else timing.deferTask(disconnectCB); 
-							continue;
-						}
-					}
-				}
-			}
-		}
+		let attribs = this.elementAttribs(element,true,false);
+		if(!attribs || attribs.size===0) return;
+		let elementScopeCtrl = this.elementScopeCtrl(element);
+		// Handle built-in attributes
+		let pass = this.builtinAttribs.onDisconnect(element,attribs,elementScopeCtrl);
+		if(pass===false) return;
 		// Run plugins onDisconnect
 		this.pluginsOnDisconnect(new pluginOnElementPlug(this,element,elementScopeCtrl,attribs));
 	}
