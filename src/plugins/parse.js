@@ -118,6 +118,9 @@ export class pluginParse {
 		element.normalize();
 	}
 	
+	static #defaultExpRegex = /(\{\{(.*?)}})/g;
+	static #expEscapeRegex = /[|\\{}()[\]^$+*?.]/g;
+	
 	/**
 	 * Sets up the parsing configuration for an element based on its attributes.
 	 * Handles options like text parsing, tree parsing, once-only execution, attribute binding, and custom regex for expressions.
@@ -149,7 +152,7 @@ export class pluginParse {
 		if(excludeOption.value) this.#childExcludeTextSet.add(element);
 		// Option: $parse:exp - Expression Regex
 		// Allows customizing the expression delimiter (default is {{exp}})
-		let expressionRegex = /(\{\{(.*?)}})/g
+		let expressionRegex = pluginParse.#defaultExpRegex;
 		let expressionOption = instance.elementAttribParseOption(element,attributeOptions,'exp',{ default:null, emptyTrue:false, runExp:false }); // $parse:exp
 		if(expressionOption.value?.length>0){
 			// Execute the custom expression format to get the regex pattern string
@@ -158,7 +161,7 @@ export class pluginParse {
 			if(typeof formattedResult==='string' && this.#expressionRegexCache.has(formattedResult)) formattedResult = this.#expressionRegexCache.get(formattedResult);
 			if(typeof formattedResult==='string'){
 				// Escape regex special characters to use it as a pattern
-				var result = formattedResult.replace(/[|\\{}()[\]^$+*?.]/g,'\\$&');
+				var result = formattedResult.replace(pluginParse.#expEscapeRegex,'\\$&');
 				// Find the position of 'exp' placeholder in the pattern
 				let pos1 = result.indexOf('exp');
 				if(pos1===-1){ console.warn('pluginParse: invalid format, expecting something like {{exp}}, found',formattedResult,expressionOption?.attribute,element); return false; }

@@ -548,7 +548,7 @@ class ScopeDom {
 		// Mark isDuringOnReady for instant calls
 		this.isDuringOnReady = true;
 		// Get on-ready listeners, disable list & execute listeners
-		let list = this.onReadyListeners.values();
+		let list = this.onReadyListeners;
 		this.onReadyListeners = null;
 		for(const fn of list) try{ fn(); }catch(err){ console.error(err); }
 		// Trigger $update for any plugins or applications that use it
@@ -562,7 +562,7 @@ class ScopeDom {
 	
 	#handleOnReadyDOM(){
 		if(!this.onDOMReadyListeners) return;
-		let list = this.onDOMReadyListeners.values();
+		let list = this.onDOMReadyListeners;
 		this.onDOMReadyListeners = null;
 		for(const fn of list) try{ fn(); }catch(err){ console.error(err); }
 	}

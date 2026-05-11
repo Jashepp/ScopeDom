@@ -58,7 +58,7 @@ export class signalProxy {
 	 */
 	constructor(target,signalCtrl,targetSignal=null,useWeakRef=false){
 		if(spProxyMap.has(target)) return target;
-		if(spTargetMap.has(target)){ let p=spTargetMap.get(target); if(p && spProxyMap.has(p)) return p; }
+		if(spTargetMap.has(target)){ let p=spTargetMap.get(target); if(p!==void 0 && spProxyMap.has(p)) return p; }
 		if(target!==Object(target)) return target;
 		if(!targetSignal){ targetSignal = new signalInstance(signalCtrl,target); targetSignal.record(); }
 		let obj = { __proto__:null, target, targetSignal, proxies:new Map(), signals:new Map(), signalCtrl, isIterable:Symbol.iterator in Object(target) };
@@ -69,30 +69,6 @@ export class signalProxy {
 		spTargetMap.set(target,proxy);
 		return proxy;
 	}
-	
-	/**
-	 * Checks if a value is an existing signalProxy.
-	 * 
-	 * @param {object} target - Value to check
-	 * @returns {boolean} True if the value is an existing signalProxy
-	 */
-	static #isProxy(target){ return spProxyMap.has(target); }
-	
-	/**
-	 * Gets the signalInstance associated with a signalProxy.
-	 * 
-	 * @param {signalProxy} proxy - The signalProxy
-	 * @returns {signalInstance} The associated signalInstance, or undefined
-	 */
-	static #getProxySignal(proxy){ return spProxyMap.get(proxy)?.targetSignal; }
-	
-	/**
-	 * Gets the target for a signalProxy.
-	 * 
-	 * @param {signalProxy} proxy - The signalProxy
-	 * @returns {object} The target object
-	 */
-	static #getProxyTarget(proxy){ return spProxyMap.get(proxy)?.target; }
 	
 	/**
 	 * Proxy handler for `has` (Reflect.has, Object.hasOwn, in operator).
@@ -435,6 +411,46 @@ export class signalProxy {
 	static preventExtensions(obj){ return Reflect.preventExtensions(obj.target); }
 	
 	/**
+	 * Checks if a value is an existing signalProxy.
+	 * 
+	 * @param {object} target - Value to check
+	 * @returns {boolean} True if the value is an existing signalProxy
+	 */
+	static _isProxy(target){ return spProxyMap.has(target); }
+	
+	/**
+	 * Gets the signalInstance associated with a signalProxy.
+	 * 
+	 * @param {signalProxy} proxy - The signalProxy
+	 * @returns {signalInstance} The associated signalInstance, or undefined
+	 */
+	static _getProxySignal(proxy){ return spProxyMap.get(proxy)?.targetSignal; }
+	
+	/**
+	 * Gets the target for a signalProxy.
+	 * 
+	 * @param {signalProxy} proxy - The signalProxy
+	 * @returns {object} The target object
+	 */
+	static _getProxyTarget(proxy){ return spProxyMap.get(proxy)?.target; }
+	
+	/**
+	 * Has a signalProxy for a target.
+	 * 
+	 * @param {object} target - The target object
+	 * @returns {boolean} True if the target has a signalProxy
+	 */
+	static _hasTargetProxy(target){ return spTargetMap.has(target); }
+	
+	/**
+	 * Gets the signalProxy for a target.
+	 * 
+	 * @param {object} target - The target object
+	 * @returns {signalProxy} The signalProxy
+	 */
+	static _getTargetProxy(target){ return spTargetMap.get(target); }
+	
+	/**
 	 * Resolves a signalProxy or signalInstance to its signalInstance or signal value.
 	 * 
 	 * Method Flow:
@@ -448,12 +464,12 @@ export class signalProxy {
 	 * @returns {any} The resolved value, either a signalInstance (strict=true), its underlying value, or the original non-signal value
 	 */
 	static _resolveSignal(value,signalObs=null,strict=false){
-		if(signalProxy.#isProxy(value)) value = signalProxy.#getProxySignal(value);
+		if(spProxyMap.has(value)) value = spProxyMap.get(value).targetSignal;
 		if(value instanceof signalInstance){
 			if(signalObs) signalObs.recordSignal(value);
 			if(!strict){
 				value = value.get();
-				if(signalProxy.#isProxy(value)) value = signalProxy.#getProxyTarget(value);
+				if(spProxyMap.has(value)) value = spProxyMap.get(value)?.target;
 			}
 		}
 		if(strict && !(value instanceof signalInstance)) return null;

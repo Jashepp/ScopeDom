@@ -26,9 +26,6 @@ import { signalProxy, resolveSignal } from "./proxy.js";
 /** @type {Symbol} Used to store signalInstance on descriptors */
 export const signalSymb = Symbol('$signalInstance');
 
-/** @type {WeakMap<object>} WeakMap / Cache of signals to re-use existing instances */
-const signalsMap = new WeakMap();
-
 /**
  * Signal Instance that represents a reactive signal value.
  * 
@@ -87,8 +84,6 @@ export class signalInstance {
 	 */
 	constructor(signalCtrl,value,useWeakRef=false){
 		let isPrimitive = value!==Object(value);
-		// Check weakmap / cache to re-use existing signal
-		if(!isPrimitive && signalsMap.has(value)) return signalsMap.get(value); 
 		// Re-use existing signal if value is a signalProxy or signalInstance
 		let resolved = resolveSignal(value,null,true);
 		if(resolved instanceof signalInstance) return resolved;
@@ -98,8 +93,6 @@ export class signalInstance {
 		else this.#setInner(value);
 		this.#isGetting = false;
 		Object.seal(this);
-		// If non-primitive, add signal to weakmap / cache
-		if(!isPrimitive) signalsMap.set(value,this);
 	}
 	
 	/**

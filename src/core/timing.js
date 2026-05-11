@@ -23,10 +23,9 @@ export class timing {
 	 */
 	static deferTask(fn){
 		deferList.add(fn);
-		if(!isDeferQueued){
-			isDeferQueued = true;
-			originalDefer(timing.#handleDeferredQueue);
-		}
+		if(isDeferQueued) return;
+		isDeferQueued = true;
+		originalDefer(timing.#handleDeferredQueue);
 	}
 	
 	static #handleDeferredQueue(){
@@ -44,12 +43,11 @@ export class timing {
 	
 	static queueCompute(fn){
 		if(fn) computeList.add(fn);
-		if(!isComputeQueued){
-			isComputeQueued = true;
-			if(isDeferQueued || deferCompute) originalDefer(timing.#handleQueue);
-			// setTimeout 0 runs compute functions right after animation frame (if any), before next frame
-			else setTimeout(timing.#handleQueue,0);
-		}
+		if(isComputeQueued) return;
+		isComputeQueued = true;
+		if(isDeferQueued || deferCompute) originalDefer(timing.#handleQueue);
+		// setTimeout 0 runs compute functions right after animation frame (if any), before next frame
+		else setTimeout(timing.#handleQueue,0);
 	}
 	
 	static async #handleQueue(){
@@ -81,19 +79,17 @@ export class timing {
 	}
 	
 	static #handleOnCompute(state){
-		let { computeFn, renderFn, ranCompute, ranRender, schRender } = state;
-		if(!schRender && renderFn) schRender = timing.requestAnimation(timing.#handleOnRender.bind(null,state)), true;
-		if(ranRender || ranCompute || !computeFn) return;
+		if(!state.schRender && state.renderFn) state.schRender = timing.requestAnimation(timing.#handleOnRender.bind(null,state)), true;
+		if(state.ranRender || state.ranCompute || !state.computeFn) return;
 		state.ranCompute = true;
-		try{ state.result = computeFn(); }catch(err){ console.error(err); }
+		try{ state.result = state.computeFn(); }catch(err){ console.error(err); }
 	}
 	
 	static #handleOnRender(state){
-		let { computeFn, renderFn, result, ranCompute, ranRender } = state;
-		if(ranRender) return;
-		if(!ranCompute && computeFn) onCompute();
+		if(state.ranRender) return;
+		if(!state.ranCompute && state.computeFn) onCompute();
 		state.ranRender = true;
-		try{ state.renderFn(result); }catch(err){ console.error(err); }
+		try{ state.renderFn(state.result); }catch(err){ console.error(err); }
 	}
 	
 	// - - - - - - - - - - - - - - - - - - - - - - - - - - - -

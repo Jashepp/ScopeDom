@@ -51,11 +51,11 @@ export class signalController {
 	/** @type {boolean} Internal flag to prevent observers from recording signals during sensitive operations */
 	#preventObservers = false;
 	
-	/** @type {Set<object>} Set of observers currently in recording mode (tracking their accessed signals as dependencies) */
-	#observersRecording = new Set();
+	/** @type {Array<object>} Array of observers currently in recording mode (tracking their accessed signals as dependencies) */
+	#observersRecording = [];
 	
-	/** @type {Set<object>} Set of all registered observers managed by this controller */
-	#observers = new Set();
+	/** @type {Array<object>} Array of all registered observers managed by this controller */
+	#observers = [];
 	
 	/**
 	 * Constructs a new signalController with a reference to the parent scope controller.
@@ -81,7 +81,7 @@ export class signalController {
 	 * @param {boolean} [options.defer=false] - Defer observer listener execution
 	 * @returns {signalObserver} The newly created signalObserver instance (also added to this controller's observers set)
 	 */
-	createObserver(options={}){ let o=new signalObserver(this,options); this.#observers.add(o); return o; }
+	createObserver(options={}){ let o=new signalObserver(this,options); this.#observers.push(o); return o; }
 	
 	/**
 	 * Removes a signalObserver from the controller.
@@ -92,7 +92,10 @@ export class signalController {
 	 */
 	removeObserver(observer,clear=true){
 		if(!(observer instanceof signalObserver)) throw new TypeError("removeObserver observer must be a signalObserver");
-		this.#observers.delete(observer); this.#observersRecording.delete(observer);
+		let obsIdx = this.#observers.indexOf(observer);
+		if(obsIdx!==-1) this.#observers.splice(obsIdx,1);
+		let obsRIdx = this.#observersRecording.indexOf(observer);
+		if(obsRIdx!==-1) this.#observersRecording.splice(obsRIdx,1);
 		if(clear) observer.clear();
 	}
 	
@@ -106,7 +109,7 @@ export class signalController {
 	 */
 	startObserverRecording(observer){
 		if(!(observer instanceof signalObserver)) throw new TypeError("startObserverRecording observer must be a signalObserver");
-		this.#observersRecording.add(observer);
+		this.#observersRecording.push(observer);
 	}
 	
 	/**
@@ -117,7 +120,8 @@ export class signalController {
 	 */
 	stopObserverRecording(observer){
 		if(!(observer instanceof signalObserver)) throw new TypeError("stopObserverRecording observer must be a signalObserver");
-		this.#observersRecording.delete(observer);
+		let obsRIdx = this.#observersRecording.indexOf(observer);
+		if(obsRIdx!==-1) this.#observersRecording.splice(obsRIdx,1);
 	}
 	
 	/**
@@ -133,7 +137,9 @@ export class signalController {
 	 */
 	triggerChange(signal,oldValue,newValue){
 		if(!(signal instanceof signalInstance)) throw new TypeError("triggerChange signal must be a signalInstance");
-		if(!this.#preventUpdates) for(let observer of this.#observers) if(observer.hasSignal(signal)) observer.triggerChange(signal,oldValue,newValue);
+		if(!this.#preventUpdates) for(let i=0,l=this.#observers.length,o; o=this.#observers[i], i<l; i++){
+			if(o.hasSignal(signal)) o.triggerChange(signal,oldValue,newValue);
+		}
 	}
 	
 	/**
@@ -144,7 +150,9 @@ export class signalController {
 	 */
 	triggerRecording(signal){
 		if(!(signal instanceof signalInstance)) throw new TypeError("triggerRecording signal must be a signalInstance");
-		if(!this.#preventObservers) for(let observer of this.#observersRecording) observer.recordSignal(signal);
+		if(!this.#preventObservers) for(let i=0,l=this.#observersRecording.length,o; o=this.#observersRecording[i], i<l; i++){
+			o.recordSignal(signal);
+		}
 	}
 	
 	/**
@@ -165,9 +173,9 @@ export class signalController {
 	
 	#isolatedSignalRecording(fn,...args){
 		let prev = Array.from(this.#observersRecording);
-		this.#observersRecording.clear();
+		this.#observersRecording.length = 0;
 		let result; try{ result=fn(...args); }catch(err){ console.error(err); }
-		for(let observer of prev) this.#observersRecording.add(observer);
+		for(let observer of prev) this.#observersRecording.push(observer);
 		return result;
 	}
 	
@@ -237,8 +245,8 @@ export class signalController {
 		if(value instanceof Array) throw new TypeError("createSignal value is an Array, use proxySignal instead");
 		if(value instanceof Map) throw new TypeError("createSignal value is a Map, use proxySignal instead");
 		if(value instanceof Set) throw new TypeError("createSignal value is a Set, use proxySignal instead");
-		let signal = new signalInstance(this,value,useWeakRef); signal.record();
-		return signal;
+		let signal = new signalInstance(this,value,useWeakRef);
+		return signal.record(), signal;
 	}
 	
 	/**
@@ -412,12 +420,13 @@ export class signalController {
 	 */
 	defineProxySignal(obj,prop,value,signal=null,silentFallback=false){
 		if(!silentFallback && value!==Object(value)) throw new TypeError("defineProxySignal target must not be a primitive, try defineSignal instead");
-		if(!signal) signal = new signalInstance(this,value);
 		let set, state = { value };
 		if(value===Object(value)){
 			value = new signalProxy(value,this,signal);
+			if(!signal) signal = signalProxy._getProxySignal(value);
 			set = this.#defineProxySignalSetter.bind(this,signal,obj,prop);
 		} else {
+			if(!signal) signal = new signalInstance(this,value);
 			set = this.#defineProxySignalSetterFallback.bind(this,state,signal,obj,prop);
 		}
 		let get = this.#defineProxySignalGetter.bind(this,signal,state);
