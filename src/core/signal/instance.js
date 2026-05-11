@@ -372,13 +372,13 @@ export class signalInstance {
 	 * @param {string} hint - The desired primitive type ('default', 'string', or 'number')
 	 * @returns {any} The converted primitive value (type depends on hint), or undefined if unknown hint
 	 */
-	[Symbol.toPrimitive](hint){
-		let v=this.get(), fn=v?.[Symbol.toPrimitive];
-		if(fn) return fn(hint);
-		if(hint==='default') return v;
-		if(hint==='string') return `${v}`;
-		if(hint==='number') return +v;
-		console.info('ScopeDom.signalInstance [Symbol.toPrimitive](hint) Unknown hint:',hint);
-	}
+	// [Symbol.toPrimitive](hint){
+	// 	let v=this.get(), fn=v?.[Symbol.toPrimitive];
+	// 	if(fn) return fn(hint);
+	// 	if(hint==='default') return v;
+	// 	if(hint==='string') return `${v}`;
+	// 	if(hint==='number') return +v;
+	// 	console.info('ScopeDom.signalInstance [Symbol.toPrimitive](hint) Unknown hint:',hint);
+	// }
 	
 }
