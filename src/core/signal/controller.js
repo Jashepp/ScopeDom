@@ -372,7 +372,7 @@ export class signalController {
 	 * 
 	 * @param {Function} fn - Compute callback function
 	 * @param {object} [options={}] - Computed signal options
-	 * @param {boolean} [options.pull=true] - Use PULL-based computation
+	 * @param {boolean} [options.pull=true] - Use PULL-based computation (default)
 	 * @returns {Array<[signalInstance, signalObserver, Function]>} Tuple of [signal, observer, clear function]
 	 * @throws {TypeError} If fn is not a function
 	 * @see {@link computeSignalPull} signalController.computeSignalPull method

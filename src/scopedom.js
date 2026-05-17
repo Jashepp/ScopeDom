@@ -1045,7 +1045,7 @@ class ScopeDom {
 	removeElementRelatedEvents(element){
 		let map = this.elementRelatedEventListeners;
 		if(map.has(element)){
-			let set = map.get(element);
+			let set = Array.from(map.get(element)).reverse();
 			for(let removeListener of set) try{ removeListener(); } catch(err){ console.error(err); }
 			map.delete(element);
 		}

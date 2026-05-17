@@ -27,7 +27,7 @@ const frozenNullObj=Object.freeze(Object.create(null));
  * @template {object} execExpOptionsDefaults
  * @typedef {object} execExpOptionsDefaults
  */
-const execExpOptionsDefaults = {
+export const execExpOptionsDefaults = {
 	/** @type {boolean} Optional argument name for the expression function (used for $sdcArgument) */
 	argument: null,
 	/** @type {boolean} Use explicit return statement in generated code */
