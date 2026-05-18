@@ -37,7 +37,7 @@ import { signalProxy, resolveSignal } from "./proxy.js";
  * @property {signalController} ctrl - The parent signal controller that manages this observer's lifecycle
  * @property {WeakSet<signalInstance>} signals - WeakSet of signals this observer depends on
  * @property {WeakSet<signalInstance>} signalsIgnore - WeakSet of signals to ignore during recording (e.g., the signal being computed)
- * @property {Set<Function>} listeners - Set of listener callbacks invoked when dependent signals change; each called with (observer, signal, oldValue, newValue)
+ * @property {Array<Function>} listeners - Array of listener callbacks invoked when dependent signals change; each called with (observer, signal, oldValue, newValue)
  * @property {boolean} isDeferring - Change notification has been deferred and not yet executed
  * 
  * @see {@link signalController} - Signal Controller for managing signals and observers
@@ -57,7 +57,7 @@ export class signalObserver {
 		this.ctrl = signalCtrl;
 		this.signals = new WeakSet();
 		this.signalsIgnore = new WeakSet();
-		this.listeners = new Set();
+		this.listeners = [];
 		this.isRecording = false;
 		this.isChanging = false;
 		this.isDeferring = false;
@@ -120,7 +120,10 @@ export class signalObserver {
 		if(this.isChanging) return;
 		this.isDeferring = false;
 		this.isChanging = true;
-		for(let fn of this.listeners) try{ fn(this,signal,oldValue,newValue); } catch(err){ console.error(err); }
+		for(let i=0,l=this.listeners.length; i<l; i++){
+			let listener = this.listeners[i];
+			try{ listener(this,signal,oldValue,newValue); } catch(err){ console.error(err); }
+		}
 		this.isChanging = false;
 	}
 	
@@ -180,20 +183,31 @@ export class signalObserver {
 	 * @param {Function} fn - Listener callback function (invoked as fn(observer, signal, oldValue, newValue))
 	 * @returns {Function} A cleanup function that removes the listener when called
 	 */
-	addListener(fn){ this.listeners.add(fn); return this.removeListener.bind(this,fn); }
+	addListener(fn){
+		let idx = this.listeners.indexOf(fn);
+		if(idx===-1) this.listeners.push(fn);
+		return this.removeListener.bind(this,fn);
+	}
 	
 	/**
 	 * Removes a listener callback from the observer.
 	 * 
 	 * @param {Function} fn - Listener callback function to remove
 	 */
-	removeListener(fn){ this.listeners.delete(fn); }
+	removeListener(fn){
+		let idx = this.listeners.indexOf(fn);
+		if(idx!==-1) this.listeners.splice(idx,1);
+	}
 	
 	/**
 	 * Clears all listeners and signals, and removes the observer from the controller.
 	 * This fully disposes of the observer's resources.
 	 */
-	clear(){ this.listeners.clear(); this.signals=new WeakSet(); this.ctrl.removeObserver(this,false); }
+	clear(){
+		this.listeners.length = 0;
+		this.signals = new WeakSet();
+		this.ctrl.removeObserver(this,false);
+	}
 	
 	/**
 	 * Only clears signals. Observer remains active in the controller.
@@ -201,7 +215,9 @@ export class signalObserver {
 	 * 
 	 * Used internally by computed signals.
 	 */
-	clearSignals(){ this.signals=new WeakSet(); }
+	clearSignals(){
+		this.signals = new WeakSet();
+	}
 	
 	[disposeSymbol] = signalObserver.prototype.clear;
 }

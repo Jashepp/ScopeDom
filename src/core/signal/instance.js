@@ -69,8 +69,8 @@ export class signalInstance {
 	/** @type {boolean} If signal needs recomputation for PULL-based computed signals */
 	#pendingPull = true;
 	
-	/** @type {Set<Function>} Set of listener callbacks to invoke on get if pendingPull=true */
-	#pullListeners = new Set();
+	/** @type {Array<Function>} Array of listener callbacks to invoke on get if pendingPull=true */
+	#pullListeners = [];
 	
 	/** @type {WeakMap<Promise,any>} A WeakMap of handled promises, so multiple changes don't get triggered, also to record the previous value */
 	#handlingPromises = new WeakMap();
@@ -160,7 +160,7 @@ export class signalInstance {
 	 * 
 	 * @param {Function} fn - Listener callback function
 	 */
-	addPullListener(fn){ this.#pullListeners.add(fn); }
+	addPullListener(fn){ this.#pullListeners.push(fn); }
 	
 	/**
 	 * Subscribes to signal updates with a listener callback.
@@ -236,7 +236,10 @@ export class signalInstance {
 		if(this.#isGetting) return this.#value;
 		this.#isGetting = true;
 		this.record();
-		if(this.#pendingPull) for(let listener of this.#pullListeners) try{ listener(); }catch(err){ console.error(err); }
+		if(this.#pendingPull) for(let i=0,l=this.#pullListeners.length; i<l; i++){
+			let listener = this.#pullListeners[i];
+			try{ listener(); }catch(err){ console.error(err); }
+		}
 		this.#isGetting = false;
 		return this.#value;
 	}
