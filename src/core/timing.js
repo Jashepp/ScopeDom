@@ -1,6 +1,6 @@
 
 import {
-	resolvedPromise, originalDefer,
+	resolvedPromise, originalDefer, noopFn,
 } from "./utils.js";
 
 // Defer / Queue Task Variables
@@ -16,6 +16,10 @@ let isComputeQueued = false;
 let deferCompute = false;
 /** @type {Set<Function>} Compute functions queued for after-RAF execution */
 let computeList = new Set();
+/** @type {boolean} Whether #handleQueue is currently running (re-entrancy guard) */
+let isHandlingComputeQueue = false;
+/** @type {Function|null} Bound function that schedules #handleQueue as a macrotask (MessageChannel or setTimeout) */
+let scheduleHandleQueue = null;
 
 // Queue Render Animation Variables
 /** @type {boolean} Whether currently inside an animation frame (DOM writes only allowed here) */
@@ -27,6 +31,9 @@ let rafList = new Set();
 /** @type {Map<any,Map<any,Function>>} Once-animation callbacks keyed by obj+key */
 let rafOnceList = new Map();
 
+/** @type {boolean} Whether scheduler.yield() is available */
+let hasSchedulerYield = typeof window?.scheduler?.yield==='function';
+
 /**
  * Timing - batching, queuing, and animation frame utilities for DOM updates.
  * 
@@ -36,9 +43,9 @@ let rafOnceList = new Map();
  * 
  * 1. Defer/Microtasks (#deferTask): Batched microtasks executed after the current turn.
  * 
- * 2. Compute Queue (queueCompute): Heavy computation queued after animation frames.
- *    Computation is processed via setTimeout (macrotask) after RAF to avoid blocking
- *    rendering, orchestrated by #handleQueue.
+ * 2. Computation is processed via macrotask (MessageChannel or setTimeout fallback)
+ *    orchestrated by #handleQueue. Time-budgeted via computeBudgetMs with optional
+ *    yield via scheduler.yield() when available.
  * 
  * 3. Render/RAF Queue (queueRender / requestAnimation): DOM updates batched in the
  *    animation frame via the native requestAnimationFrame batching mechanism.
@@ -46,6 +53,27 @@ let rafOnceList = new Map();
  * @class timing
  */
 export class timing {
+	
+	/**
+	 * Configures the compute queue transport.
+	 * 
+	 * Uses MessageChannel.postMessage when available, falls back to setTimeout 0.
+	 * Internal method, disabled after first run.
+	 */
+	static setupScheduler(){
+		// MessageChannel
+		if(typeof MessageChannel==='function'){
+			let timingMC = new MessageChannel();
+			timingMC.port1.onmessage = e=>timing.#handleQueue();
+			scheduleHandleQueue = timingMC.port2.postMessage.bind(timingMC.port2,null);
+		}
+		// setTimeout 0
+		else {
+			scheduleHandleQueue = setTimeout.bind(null,timing.#handleQueue,0);
+		}
+		// Disable setupScheduler
+		timing.setupScheduler = noopFn;
+	}
 	
 	/**
 	 * Defer / Queue a microtask (batched with deduplication).
@@ -93,7 +121,7 @@ export class timing {
 	/**
 	 * Add a function to the compute list and schedule its execution.
 	 * 
-	 * Computes run after animation frames (via setTimeout 0) by default, or via
+	 * Computes run after animation frames (via macrotask) by default, or via
 	 * the defer/microtask queue if isDeferQueued or deferCompute is true. Multiple
 	 * queueCompute calls deduplicate via isComputeQueued flag - only one
 	 * #handleQueue execution is scheduled regardless of how many fns are added.
@@ -105,9 +133,16 @@ export class timing {
 		if(isComputeQueued) return;
 		isComputeQueued = true;
 		if(isDeferQueued || deferCompute) originalDefer(timing.#handleQueue);
-		// setTimeout (macrotask) is used as a fallback when no defer/microtask is queued; runs compute after the current turn
-		else setTimeout(timing.#handleQueue,0);
+		// scheduleHandleQueue is used as a fallback when no defer/microtask is queued; runs compute via macrotask
+		else scheduleHandleQueue();
 	}
+	
+	/** Budget until yielded to main thread / animation frame - set to 0 to disable */
+	static computeBudgetMs = 100;
+	/** Enable yielding to main thread via scheduler.yield() */
+	static computeYieldMainThread = true;
+	/** Enable yielding to next animation frame */
+	static computeYieldAnimationFrame = false;
 	
 	/**
 	 * Orchestrator that executes queued computations.
@@ -116,30 +151,45 @@ export class timing {
 	 * then loops up to 3 times handling any deferred tasks that may add new compute
 	 * entries. Resets isComputeQueued and deferCompute after all work is drained.
 	 * 
+	 * Time-budgeted via computeBudgetMs (0 disables). Yields via scheduler.yield()
+	 * when over budget if computeYieldMainThread is true and supported by browser
+	 * else awaits the next animation frame if computeYieldAnimationFrame is true.
+	 * Recompute is re-scheduled via microtask (after yield) or macrotask otherwise.
+	 * 
 	 * @private
 	 * @returns {Promise<void>} Resolved after all compute/defer work is drained
 	 */
 	static async #handleQueue(){
 		if(!isRAFScheduled) timing.requestAnimation();
-		timing.#handleComputeQueue();
-		// deferList is checked to purposefuly delay until next microtask
-		for(let i=0; i<3 && (deferList.size>0 || computeList.size>0); i++) await timing.#handleComputeQueue();
+		if(isHandlingComputeQueue) return;
+		isHandlingComputeQueue = true;
+		let overBudget = false, start = performance.now(), budget = timing.computeBudgetMs;
+		// Loop - deferList is checked to purposefully delay until next microtask
+		for(let j=0; j<3 && (deferList.size>0 || computeList.size>0); j++){
+			let list = Array.from(computeList);	computeList.clear();
+			for(let i=0, l=list.length; i<l; i++){
+				try{ list[i](); }catch(err){ console.error(err); }
+				if(budget>0 && performance.now()-start>=budget){
+					computeList = new Set([ ...list.slice(i+1), ...Array.from(computeList) ]);
+					overBudget = true;
+					break;
+				}
+			}
+			if(overBudget) break;
+			if(j>1) await 0;
+		}
+		// Yield to main thread when over budget
+		if(overBudget && hasSchedulerYield && timing.computeYieldMainThread) await scheduler.yield();
+		// Await until animation frame
+		if(overBudget && timing.computeYieldAnimationFrame) await new Promise(r=>timing.requestAnimation(r));
+		// Reset re-entrancy flags
 		isComputeQueued = false;
 		deferCompute = false;
-	}
-	
-	/**
-	 * Run queued computation functions, then reset the queue.
-	 * 
-	 * Functions added to computeList by `queueCompute` are drained in order.
-	 * 
-	 * @private
-	 * @see queueCompute timing.queueCompute
-	 */
-	static #handleComputeQueue(){
-		if(computeList.size===0) return;
-		let list = Array.from(computeList); computeList.clear();
-		for(let cb of list) try{ cb(); }catch(err){ console.error(err); }
+		isHandlingComputeQueue = false;
+		// If yielded via scheduler.yield(), process compute queue now
+		if(overBudget && hasSchedulerYield && timing.computeYieldMainThread) originalDefer(timing.#handleQueue);
+		// Otherwise schedule it via macrotask
+		else if(overBudget) scheduleHandleQueue();
 	}
 	
 	// - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -309,3 +359,6 @@ export class timing {
 	
 	
 }
+
+timing.setupScheduler();
+Object.seal(timing);
