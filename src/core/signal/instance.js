@@ -73,6 +73,9 @@ export class signalInstance {
 	/** @type {boolean} Is WeakRef enabled */
 	#useWeakRef = false;
 	
+	/** @type {Function|null} Custom equality function */
+	#equalsFn = null;
+	
 	/** @type {boolean} Is value an object (not a primitive) */
 	#isObject = false;
 	
@@ -93,15 +96,18 @@ export class signalInstance {
 	 * 
 	 * @param {signalController} signalCtrl The parent signal controller
 	 * @param {any} value Initial signal value
-	 * @param {boolean} [useWeakRef=false] Use WeakRef for object values, except when value is already a signalInstance.
+	 * @param {object} [options={}] Configuration options
+	 * @param {boolean} [options.useWeakRef=false] Use WeakRef for object values; value must be referenced elsewhere
+	 * @param {Function} [options.equalsFn=null] Custom equality function, `(a, b, signal)`, returns boolean
 	 */
-	constructor(signalCtrl,value,useWeakRef=false){
-		let isPrimitive = value!==Object(value);
+	constructor(signalCtrl,value,options={}){
+		let { useWeakRef, equalsFn } = options = { __proto__:null, useWeakRef:false, equalsFn:null, ...options };
 		// Re-use existing signal if value is a signalProxy or signalInstance
 		let resolved = resolveSignal(value,null,true);
 		if(resolved instanceof signalInstance) return resolved;
 		// Cofigure new signal
-		this.#ctrl = signalCtrl; this.#useWeakRef = useWeakRef && !!window.WeakRef;
+		this.#ctrl = signalCtrl; this.#useWeakRef = !!useWeakRef && !!window.WeakRef;
+		this.#equalsFn = typeof equalsFn==="function" ? equalsFn : null;
 		if(value instanceof Promise || typeof value?.then==="function" || value instanceof signalInstance) this.set(value);
 		else this.#setInner(value);
 		this.#isGetting = false;
@@ -147,6 +153,8 @@ export class signalInstance {
 	 * 
 	 * This method bypasses the normal observer notification flow, allowing internal state changes
 	 * without cascading updates. It also resets the #pendingPull flag since a new value has been set.
+	 * 
+	 * This does NOT use `.equals` method.
 	 * 
 	 * @private
 	 * @param {any} v The value to set
@@ -223,12 +231,34 @@ export class signalInstance {
 	 * This method calls {@link changed} if this signal's value is still the same promise.
 	 * 
 	 * @param {any} promise The original promise
+	 * @param {any} result The resolve/reject result
 	 */
-	#changedPromise(promise){
+	#changedPromise(promise,result){
 		if(!this.#handlingPromises.has(promise)) return;
 		let oldValue = this.#handlingPromises.get(promise);
-		if(promise===this.#promise) this.changed(oldValue);
+		if(this.equals(promise,this.#promise)) this.changed(oldValue);
 		this.#handlingPromises.delete(promise);
+	}
+	
+	/**
+	 * Compares two signal values for deduplication purposes (also used internally).
+	 * 
+	 * Resolution order:
+	 * 1. Custom {@link options.equalsFn} if provided, called with `(a, b, signal)`
+	 * 2. `.equals()` method on either value (or its prototype)
+	 * 3. Strict equality `a===b` (default)
+	 * 
+	 * This allows immutable value types (records, tuples, BigInt, custom objects with `.equals()`) to be deep-equal
+	 * 
+	 * @param {any} a First value
+	 * @param {any} b Second value
+	 * @returns {boolean} True if the values are considered equal
+	 */
+	equals(a,b){
+		if(this.#equalsFn) return this.#equalsFn(a,b,this);
+		if(typeof a?.equals==="function") return a.equals(b);
+		if(typeof b?.equals==="function") return b.equals(a);
+		return a===b;
 	}
 	
 	/**
@@ -278,9 +308,9 @@ export class signalInstance {
 	set(value){
 		if(value instanceof signalInstance) value = value.get();
 		let oldValue = this.#value;
-		if(oldValue===value) return false;
+		if(this.equals(oldValue,value)) return false;
 		if(isPromise(value)){
-			if(this.#promise===value) return false;
+			if(this.equals(this.#promise,value)) return false;
 			this.#setInner(value);
 			this.#promise = value;
 			if(!this.#handlingPromises.has(value)){

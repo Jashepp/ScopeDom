@@ -501,10 +501,12 @@ export class scopeController {
 	 * This is similar to $createSignal, except it returns an array with [ getter, setter, signalInstance ].
 	 * 
 	 * @param {any} [value] Initial signal value
-	 * @param {boolean} [useWeakRef=false] Use weak references
+	 * @param {object} [options={}] Configuration options
+	 * @param {boolean} [options.useWeakRef=false] Use WeakRef for object values; value must be referenced elsewhere
+	 * @param {Function} [options.equalsFn=null] Custom equality function, `(a, b, signal)`, returns boolean
 	 * @returns {Array<Function,Function,signalInstance>} [ getter, setter, signalInstance ]
 	 */
-	$signal(value=void 0,useWeakRef=false){ return this.signalCtrl.signal(value,useWeakRef); }
+	$signal(value=void 0,options={}){ return this.signalCtrl.signal(value,options); }
 	
 	/**
 	 * Create a new signal instance & record it immediately to any recording signal observers.
@@ -512,10 +514,12 @@ export class scopeController {
 	 * This only returns the signalInstance.
 	 * 
 	 * @param {any} [value] Initial signal value
-	 * @param {boolean} [useWeakRef=false] Use weak references
+	 * @param {object} [options={}] Configuration options
+	 * @param {boolean} [options.useWeakRef=false] Use WeakRef for object values; value must be referenced elsewhere
+	 * @param {Function} [options.equalsFn=null] Custom equality function, `(a, b, signal)`, returns boolean
 	 * @returns {signalInstance} The created signal instance
 	 */
-	$createSignal(value=void 0,useWeakRef=false){ return this.signalCtrl.createSignal(value,useWeakRef); }
+	$createSignal(value=void 0,options={}){ return this.signalCtrl.createSignal(value,options); }
 	
 	/**
 	 * Define a signal on an object property (getter & setter).

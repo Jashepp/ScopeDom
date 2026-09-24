@@ -319,23 +319,28 @@ export class signalController {
 	 * This is similar to createSignal, except it returns an array with [ getter, setter, signalInstance ].
 	 * 
 	 * @param {any} [value] Initial signal value
+	 * @param {object} [options={}] Configuration options
+	 * @param {boolean} [options.useWeakRef=false] Use WeakRef for object values; value must be referenced elsewhere
+	 * @param {Function} [options.equalsFn=null] Custom equality function, `(a, b, signal)`, returns boolean
 	 * @returns {Array<Function,Function,signalInstance>} [ getter, setter, signalInstance ]
 	 */
-	signal(value=void 0,useWeakRef=false){ let s=this.createSignal(value,useWeakRef); return [s.get.bind(s),s.set.bind(s),s]; }
+	signal(value=void 0,options={}){ let s=this.createSignal(value,options); return [s.get.bind(s),s.set.bind(s),s]; }
 	
 	/**
 	 * Creates a new signalInstance and records it to any recording observers.
 	 * 
 	 * @param {any} value Initial signal value (cannot be Array, Map, or Set)
-	 * @param {boolean} [useWeakRef=false] Use WeakRef for the value. It must be referenced elsewhere otherwise it may vanish on a GC event
+	 * @param {object} [options={}] Configuration options
+	 * @param {boolean} [options.useWeakRef=false] Use WeakRef for object values; value must be referenced elsewhere
+	 * @param {Function} [options.equalsFn=null] Custom equality function, `(a, b, signal)`, returns boolean
 	 * @returns {signalInstance} The created signal instance
 	 * @throws {TypeError} If value is an Array, Map, or Set (use proxySignal instead)
 	 */
-	createSignal(value=void 0,useWeakRef=false){
+	createSignal(value=void 0,options={}){
 		if(value instanceof Array) throw new TypeError("createSignal value is an Array, use proxySignal instead");
 		if(value instanceof Map) throw new TypeError("createSignal value is a Map, use proxySignal instead");
 		if(value instanceof Set) throw new TypeError("createSignal value is a Set, use proxySignal instead");
-		let signal = new signalInstance(this,value,useWeakRef);
+		let signal = new signalInstance(this,value,options);
 		return signal.record(), signal;
 	}
 	

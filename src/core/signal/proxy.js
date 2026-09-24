@@ -321,7 +321,7 @@ export class signalProxy {
 		if(currentValue instanceof signalInstance) return currentValue;
 		let descriptor = mtCacheGetDefinedProperty(target,prop);
 		if(descriptor?.get?.[signalSymb] instanceof signalInstance) return descriptor.get[signalSymb];
-		signal = new signalInstance(signalCtrl,newValue,true);
+		signal = new signalInstance(signalCtrl,newValue,{ useWeakRef:true });
 		signal.record(); signals.set(prop,signal);
 		return signal;
 	}
