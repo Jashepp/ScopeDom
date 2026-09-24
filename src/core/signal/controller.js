@@ -69,6 +69,9 @@ export class signalController {
 	/** @type {Array<object>} Array of all registered observers managed by this controller */
 	#observers = [];
 	
+	/** @type {Array<Map>|null} Stack of batch maps (signal -> oldValue). null or empty when not batching. */
+	#batchStack = null;
+	
 	/**
 	 * Constructs a new signalController with a reference to the parent scope controller.
 	 * 
@@ -137,9 +140,16 @@ export class signalController {
 	
 	/**
 	 * Triggers a change notification to all observers that have the given signal recorded.
+	 * This method is called when a signal changes value.
 	 * 
-	 * When a signal changes value, it calls this method which then notifies all dependent observers via {@link signalObserver.triggerChange}.
-	 * Dependent observers always fire deferred via {@link timing.deferTask}; observers never run immediately or during the current task.
+	 * If signal batching is currently active, the change is recorded in the active batch.
+	 * Otherwise all dependent observers are notified via {@link signalObserver.triggerChange}.
+	 * 
+	 * Change notifications always fire deferred via {@link timing.deferTask}.
+	 * 
+	 * During batching, this stores `oldValue` for `signal` in the most recent batch map.
+	 * If the signal is already recorded (changed multiple times in one batch), the previous
+	 * old value stays and the new value is ignored.
 	 * 
 	 * @param {signalInstance} signal The signal that changed
 	 * @param {any} oldValue The previous value before the change
@@ -148,8 +158,16 @@ export class signalController {
 	 */
 	triggerChange(signal,oldValue,newValue){
 		if(!(signal instanceof signalInstance)) throw new TypeError("triggerChange signal must be a signalInstance");
-		if(!this.#preventUpdates) for(let i=0,l=this.#observers.length,o; o=this.#observers[i], i<l; i++){
-			if(o.hasSignal(signal)) o.triggerChange(signal,oldValue,newValue);
+		// Batch Recording
+		if(this.#batchStack!==null && this.#batchStack.length>0){
+			let currentMap = this.#batchStack[this.#batchStack.length-1];
+			if(!currentMap.has(signal)) currentMap.set(signal,oldValue);
+		}
+		// Trigger Change
+		else {
+			if(!this.#preventUpdates) for(let i=0,l=this.#observers.length,o; o=this.#observers[i], i<l; i++){
+				if(o.hasSignal(signal)) o.triggerChange(signal,oldValue,newValue);
+			}
 		}
 	}
 	
@@ -173,6 +191,8 @@ export class signalController {
 	 * The returned wrapper captures the current set of recording observers, clears them, executes the function, then restores them.
 	 * This prevents nested operations from accidentally recording signals on observers that shouldn't see them during computation.
 	 * 
+	 * Warning: Using an async `fn` function will only isolate recording up until the first await!
+	 * 
 	 * @param {Function} fn Function to run in isolated recording context
 	 * @returns {Function} A wrapped function that captures and restores recording observers (executes in isolated recording mode)
 	 * @throws {TypeError} If fn is not a Function
@@ -188,6 +208,8 @@ export class signalController {
 	 * Shelves current recording observers, clears them, runs `fn` with args, then restores them.
 	 * Prevents nested operations from accidentally recording signals on observers that shouldn't see them.
 	 * Thrown errors from `fn` are caught and logged via `console.error` (not rethrown); isolates recording from the surrounding computation.
+	 * 
+	 * Warning: Using an async `fn` function will only isolate recording up until the first await!
 	 * 
 	 * @private
 	 * @param {Function} fn Callback to execute in isolated recording mode
@@ -206,6 +228,8 @@ export class signalController {
 	 * Enables `using` keyword to automatically start/stop an isolated recording mode for a block of code.
 	 * 
 	 * Note: This is identical to {@link isolateRecording}, without the function wrapper.
+	 * 
+	 * Warning: Using this within an async context with any awaits, will effect other observers!
 	 * 
 	 * @example
 	 * {
@@ -231,6 +255,8 @@ export class signalController {
 	 * This creates a temporary "quiet zone" where signal changes don't propagate to observers.
 	 * Useful when you need to modify signals without triggering cascading updates, such as during initialisation.
 	 * 
+	 * Warning: Using an async `fn` function will only prevent updates up until the first await!
+	 * 
 	 * @param {Function} fn Function to run without triggering observer updates
 	 * @param {...*} args Arguments to pass to the function
 	 * @returns {any} The function's result, or throws any error that occurred
@@ -251,10 +277,12 @@ export class signalController {
 	 * 
 	 * Note: This is identical to {@link preventUpdates}, without the function wrapper.
 	 * 
+	 * Warning: Using this within an async context with any awaits, will effect other observers!
+	 * 
 	 * @example
 	 * {
-	 *   // Signal updates disabled
 	 *   using _ = signalCtrl.preventUpdatesScope();
+	 *   // Signal updates disabled
 	 *   // ... update signals
 	 *   // Signal updates enabled
 	 * }
@@ -273,6 +301,8 @@ export class signalController {
 	 * 
 	 * This creates a temporary "quiet zone" where recording observers don't record new signal dependencies.
 	 * Existing tracked signals will still trigger updates.
+	 * 
+	 * Warning: Using an async `fn` function will only prevent observers up until the first await!
 	 * 
 	 * @param {Function} fn Function to run without observers recording signals
 	 * @param {...*} args Arguments to pass to the function
@@ -294,10 +324,12 @@ export class signalController {
 	 * 
 	 * Note: This is identical to {@link preventObservers}, without the function wrapper.
 	 * 
+	 * Warning: Using this within an async context with any awaits, will effect other observers!
+	 * 
 	 * @example
 	 * {
-	 *   // Signal dependency tracking disabled
 	 *   using _ = signalCtrl.preventObserversScope();
+	 *   // Signal dependency tracking disabled
 	 *   // ... access signals
 	 *   // Signal dependency tracking enabled
 	 * }
@@ -309,6 +341,111 @@ export class signalController {
 		return { __proto__:null, [disposeSymbol]:()=>{
 			this.#preventObservers = false;
 		} };
+	}
+	
+	/**
+	 * Batches signal change notifications for the duration of `fn`.
+	 * 
+	 * While active, signal changes are recorded (first old-value per signal) instead of
+	 * immediately notifying observers. All recorded signals are flushed (notified) when the
+	 * batch ends. Nested calls are supported via an internal stack.
+	 * 
+	 * Useful when updating multiple signals in sequence, for only the first & last values to be observed.
+	 * 
+	 * Warning: Using an async `fn` function will only batch signals up until the first await!
+	 * 
+	 * @see {@link batchChangesScope} The `using` keyword equivalent
+	 * 
+	 * @param {Function} fn Function to run within the batch context
+	 * @param {object} [options={}] Batch configuration
+	 * @param {boolean} [options.skipUnchanged=false] Skip notifying observers for signals whose
+	 *   current value (`getSilent()`) equals the recorded old value via `signal.equals(old, current)`.
+	 *   This avoids a notification when the signal net-returned to its original value during the batch.
+	 * @returns {any} The return value of `fn`, or re-throws any error
+	 * @throws {TypeError} If fn is not a Function
+	 */
+	batchChanges(fn,options={}){
+		this.#batchStart();
+		let result = void 0, error;
+		try{ result = fn(); }catch(err){ error=err; }
+		this.#batchEnd(options);
+		if(error) throw error;
+		return result;
+	}
+	
+	/**
+	 * Enables `using` keyword scope for batched signal changes.
+	 * 
+	 * Note: This is identical to {@link batchChanges}, without the function wrapper.
+	 * 
+	 * Warning: Using this within an async context with any awaits, will batch unrelated signals!
+	 * 
+	 * @example
+	 * {
+	 *   using _ = signalCtrl.batchChangesScope({ skipUnchanged:true });
+	 *   // Signal updates paused
+	 *   // ... change signals: a.set(1); b.set(2); a.set(2);
+	 *   // Signal updates flushed & resumed
+	 * }
+	 * 
+	 * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/using
+	 * 
+	 * @param {object} [options={}] Batch configuration (same as {@link batchChanges})
+	 * @param {boolean} [options.skipUnchanged=false] Skip unchanged signals
+	 * @returns {object} Disposal object ending the batch when the `using` block exits
+	 */
+	batchChangesScope(options={}){
+		this.#batchStart();
+		return { __proto__:null, [disposeSymbol]:()=>{
+			this.#batchEnd(options);
+		} };
+	}
+	
+	/**
+	 * Begin new signal batch, pushing a new Map onto the internal batch stack.
+	 * 
+	 * If this is the first batch (stack is null/empty), starts a new top-level
+	 * stack. Otherwise pushes a child map; when it ends, child entries merge
+	 * into the parent.
+	 * 
+	 * @private
+	 */
+	#batchStart(){
+		let currentMap = new Map();
+		if(this.#batchStack===null || this.#batchStack.length===0) this.#batchStack = [ currentMap ];
+		else this.#batchStack.push(currentMap);
+	}
+	
+	/**
+	 * End last signal batch, popping the current map off the stack.
+	 * 
+	 * If the parent stack still has depth, the current map's entries merge into
+	 * the parent's map (entries already in the parent are preserved). When the
+	 * stack is empty after popping, all recorded signals are flushed - each
+	 * signal receives a `changed(oldValue)` notification. With `skipUnchanged`,
+	 * signals that net-returned to their old value are skipped.
+	 * 
+	 * @private
+	 * @param {object} [options={}] Batch configuration
+	 * @param {boolean} [options.skipUnchanged=false] Skip signals unchanged after batch
+	 */
+	#batchEnd(options={}){
+		if(this.#batchStack===null || this.#batchStack.length===0) return;
+		let { skipUnchanged } = options = { __proto__:null, skipUnchanged:false, ...options };
+		let currentMap = this.#batchStack.pop(), stackLen = this.#batchStack.length;
+		// Merge stack into parent stack
+		if(stackLen>0){
+			let parentMap = this.#batchStack[stackLen-1];
+			for(let [signal,oldValue] of currentMap) if(!parentMap.has(signal)) parentMap.set(signal,oldValue);
+		}
+		// Flush Changes
+		else {
+			this.#batchStack = null;
+			for(let [signal,oldValue] of currentMap){
+				if(skipUnchanged && signal.equals(oldValue,signal.getSilent())) continue;
+				signal.changed(oldValue);
+			}
+		}
 	}
 	
 	// Signal Helper Methods

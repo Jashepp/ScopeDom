@@ -201,7 +201,8 @@ export class signalInstance {
 	/**
 	 * Records this signal to any currently recording observers.
 	 * 
-	 * When an observer is in "recording mode", accessing a signal causes that signal to be recorded as a dependency on the observer.
+	 * When an observer is in "recording mode", accessing a signal causes that signal to be
+	 * recorded as a dependency on the observer.
 	 * 
 	 * This method is automatically called internally by {@link get}.
 	 * 
@@ -212,8 +213,9 @@ export class signalInstance {
 	/**
 	 * Notifies all observers that have this signal recorded as a dependency.
 	 * 
-	 * The change notification goes through the controller, to the observers that depend on this signal.
-	 * The observer itself will then invoke its listeners. If the observer is for a computed signal, that then gets updated (PUSH-based), or invalidated (PULL-based).
+	 * The change notification goes through the controller, to all dependent observers.
+	 * The observer itself will then invoke its listeners. If the observer is for a computed signal,
+	 * the signal then gets updated (PUSH-based), or invalidated (PULL-based).
 	 * 
 	 * This method is automatically called internally by {@link set}.
 	 * 
@@ -230,6 +232,7 @@ export class signalInstance {
 	 * 
 	 * This method calls {@link changed} if this signal's value is still the same promise.
 	 * 
+	 * @private
 	 * @param {any} promise The original promise
 	 * @param {any} result The resolve/reject result
 	 */
