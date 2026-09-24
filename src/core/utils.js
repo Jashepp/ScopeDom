@@ -69,13 +69,13 @@ export function scopeAllowed(obj){ return obj && !isNative(obj); }
 export const defineWeakRef = (target,prop,value=target[prop])=>{
 	if(!window.WeakRef) return target[prop]=value, target;
 	let ref = new WeakRef(value);
-	defineProperty(target,prop,{ get(){ return ref.deref(); }, set(v){ ref=new WeakRef(v); } });
+	defineProperty(target,prop,{ __proto__:null, get(){ return ref.deref(); }, set(v){ ref=new WeakRef(v); } });
 	return target;
 };
 
 const setAttributeElement = document.createElement('template');
 /** Sets an attribute, falling back to parsed HTML for names browsers would reject. */
-export function setAttribute(target,name,value){ // Set attribute with less name limitations
+export function setAttribute(target,name,value){
 	try{ target.setAttribute(name,value); }
 	catch(e){
 		let t=setAttributeElement; t.innerHTML=`<span ${name}=""></span>`;

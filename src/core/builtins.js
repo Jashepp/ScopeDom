@@ -434,11 +434,13 @@ export class builtinAttributes {
 			let classList = Array.from(result).filter(this.#attrClass_filterArray);
 			return defaultClasses.length>0 ? defaultClasses+' '+classList.join(' ') : classList.join(' ');
 		}
-		// If object or map, disable any existing classes if needed, and add new classes
-		else if(result instanceof Map || result===Object(result)){
-			let newClassList = new Set(defaultClasses.split(' '));
-			let classObj = Object.entries(result).filter(this.#attrClass_filterEntries);
-			for(let [k,v] of classObj){
+		// If object, disable any existing classes if needed, and add new classes
+		else if(result===Object(result)){
+			let classObjEntries, newClassList = new Set(defaultClasses.split(' '));
+			if(result instanceof Map) classObjEntries = Array.from(result.entries());
+			else classObjEntries = Object.entries(result);
+			classObjEntries = classObjEntries.filter(this.#attrClass_filterEntries);
+			for(let [k,v] of classObjEntries){
 				if(!v && newClassList.has(k)) newClassList.delete(k);
 				else if(v) newClassList.add(k);
 			}
@@ -458,7 +460,7 @@ export class builtinAttributes {
 	 */
 	#attrClass_render(element,newClassName){
 		if(element[this.#attrClassAbortSymbol].abort) return;
-		if(newClassName!==void 0) element.className = newClassName;
+		if(typeof newClassName==='string') element.className = newClassName;
 	}
 	
 	#attrClass_filterArray(k){ return typeof k==='string' && k.length>0; }
@@ -487,10 +489,10 @@ export class builtinAttributes {
 			let { signal, expFn } = instance.ensureExpressionSignal(element,name2);
 			if(signal){
 				let obs = signalCtrl.createObserver(); obs.recordSignal(signal);
-				let oldValue, extra = { __proto__:null, $attribute, get $value(){ return signal?.get(); }, get $oldValue(){ return oldValue; } };
+				let state = { __proto__:null, value:void 0, signal };
+				let extra = { __proto__:null, $attribute, get $value(){ return signal?.get(); }, get $oldValue(){ return state.value; } };
 				let { runFn:watchFn } = instance.elementExecExp(elementScopeCtrl,watchValue,extra,{ __proto__:null, run:false });
-				watchFn = obs.wrapRecorder(watchFn);
-				obs.addListener(function attribSignalWatchValue(o,s,oVal,nVal){ oldValue=signal?.getSilent(); watchFn(); });
+				obs.addListener(this.#attrSignal_watchListener.bind(this,state,watchFn));
 				instance.registerElementRelatedEvent(element,obs.clear.bind(obs));
 			}
 		}
@@ -503,6 +505,11 @@ export class builtinAttributes {
 				instance.registerElementRelatedEvent(element,clear);
 			}
 		}
+	}
+	
+	#attrSignal_watchListener(state,watchFn,o,s,oVal,nVal){
+		state.value = state.signal?.getSilent();
+		watchFn();
 	}
 	
 	/**

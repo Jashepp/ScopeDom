@@ -404,7 +404,7 @@ class ScopeDom {
 		this.builtinAttribs = new builtinAttributes(this);
 		/** @type {boolean} */
 		this.dev = !!this.options.dev;
-		// Dev-friendly notice
+		// Dev notice
 		DEV: { if(this.dev && !options.signalProxyAll) console.warn("ScopeDom: signalProxyAll is `false`, signal reactivity will be disabled for most expressions"); }
 		// Plugins
 		/** @type {object} Plugin system object */
@@ -625,8 +625,8 @@ class ScopeDom {
 	/**
 	 * readystatechange event listener for document.
 	 * 
-	 * Tracks DOM readiness state machine: 'interactive' → state 1 (calls triggerOnReady
-	 * for interactive-ready callbacks), 'complete' → state 2 (removes the listener and
+	 * Tracks DOM readiness state machine: 'interactive' -> state 1 (calls triggerOnReady
+	 * for interactive-ready callbacks), 'complete' -> state 2 (removes the listener and
 	 * calls triggerOnReady with domComplete=true for full-load callbacks).
 	 * 
 	 * @private
@@ -1248,7 +1248,7 @@ class ScopeDom {
 	 */
 	ensureExpressionSignal(element,key){
 		let elementScopeCtrl = this.elementScopeCtrl(element);
-		let { runFn:expFn, options } = this.elementExecExp(elementScopeCtrl,`${key}`,null,{ __proto__:null, run:false, useReturn:true, useSignalProxy:true, returnSignals:true });
+		let { runFn:expFn } = this.elementExecExp(elementScopeCtrl,`${key}`,null,{ __proto__:null, run:false, useReturn:true, useSignalProxy:true, returnSignals:true });
 		let signal = resolveSignal(expFn(),null,true);
 		if(!signal){
 			signal = this.scopeCtrl.signalCtrl.createSignal();

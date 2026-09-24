@@ -87,7 +87,8 @@ export class signalObserver {
 	 * @param {signalInstance} signal The signal to record as a dependency
 	 */
 	recordSignal(signal){
-		if(!this.signalsIgnore.has(signal)) this.signals.add(signal);
+		if(this.signalsIgnore.has(signal)) return;
+		this.signals.add(signal);
 	}
 	
 	/**
@@ -211,7 +212,7 @@ export class signalObserver {
 	 */
 	recordingScope(){
 		this.startRecording();
-		return { [disposeSymbol]: this.stopRecording.bind(this) };
+		return { __proto__:null, [disposeSymbol]: this.stopRecording.bind(this) };
 	}
 	
 	/**
@@ -243,9 +244,17 @@ export class signalObserver {
 	 * This fully disposes of the observer's resources.
 	 */
 	clear(){
-		this.listeners.length = 0;
-		this.signals = new WeakSet();
+		this.clearListeners();
+		this.clearSignals();
 		this.ctrl.removeObserver(this,false);
+	}
+	
+	/**
+	 * Only clears listeners. Observer remains active in the controller.
+	 * Use this when you want to remove all listeners without fully disposing the observer.
+	 */
+	clearListeners(){
+		this.listeners.length = 0;
 	}
 	
 	/**

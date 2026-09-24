@@ -649,7 +649,7 @@ export class pluginIf {
 			if(caseValue instanceof Function) return !!caseValue(matchValue);
 			// Map / WeakMap matching:
 			// - If matchValue is a Map/WeakMap and caseValue is a plain object, convert object to Map.
-			//   Non-iterable objects (eg: { key1: 'value1' }) become Map via Object.entries → entries.
+			//   Non-iterable objects (eg: { key1: 'value1' }) become Map via Object.entries -> entries.
 			// - If caseValue itself is a Map, iterate: every [[key,value]] pair must exist in matchValue
 			//   (subset match semantics: every case key must be present with matching value).
 			if(matchValue instanceof Map || matchValue instanceof WeakMap){

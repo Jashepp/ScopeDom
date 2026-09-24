@@ -24,10 +24,10 @@ import { signalObserver } from "./observer.js";
 import { signalInstance, signalSymb } from "./instance.js";
 
 /** @type {WeakMap<object, object>} Maps proxy objects to their metadata. WeakMap[proxy->metadata] */
-const spProxyMap = new WeakMap();
+export const spProxyMap = new WeakMap();
 
 /** @type {WeakMap<object, object>} Reverse mapping from original targets to their proxies. WeakMap[target->proxy] */
-const spTargetMap = new WeakMap();
+export const spTargetMap = new WeakMap();
 
 /**
  * Signal Proxy - the proxy engine that enables infinitely-deep reactive data structures.
@@ -76,7 +76,7 @@ export class signalProxy {
 		// Memory-safe: store target as a WeakRef so GC can collect if proxy is orphaned
 		if(useWeakRef && window.WeakRef) defineWeakRef(obj,'target');
 		let proxy = new Proxy(obj,signalProxy);
-		// Maintain both directions of identity: proxy→metadata and target→proxy (for dedup)
+		// Maintain both directions of identity: proxy-metadata and target-proxy (for dedup)
 		spProxyMap.set(proxy,obj);
 		spTargetMap.set(target,proxy);
 		return proxy;
@@ -134,7 +134,7 @@ export class signalProxy {
 		let isPrimitive = getValue!==Object(getValue);
 		let signal = signalProxy.#proxyEnsureSignal(obj,prop,getValue);
 		if(signal.get()!==getValue) signal.set(getValue);
-		// Non-primitive → primitive transition: delete stale nested proxy
+		// Non-primitive -> primitive transition: delete stale nested proxy
 		if(isPrimitive && proxies.has(prop)) proxies.delete(prop);
 		if(isPrimitive) return getValue;
 		// Nested non-primitive: return cached nested proxy or create a new one (infinitely deep)

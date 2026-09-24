@@ -220,7 +220,7 @@ export class signalController {
 	isolatedRecordingScope(){
 		let prev = Array.from(this.#observersRecording);
 		this.#observersRecording.length = 0;
-		return { [disposeSymbol]:()=>{
+		return { __proto__:null, [disposeSymbol]:()=>{
 			for(let observer of prev) this.#observersRecording.push(observer);
 		} };
 	}
@@ -263,7 +263,7 @@ export class signalController {
 	 */
 	preventUpdatesScope(){
 		this.#preventUpdates = true;
-		return { [disposeSymbol]:()=>{
+		return { __proto__:null, [disposeSymbol]:()=>{
 			this.#preventUpdates = false;
 		} };
 	}
@@ -306,7 +306,7 @@ export class signalController {
 	 */
 	preventObserversScope(){
 		this.#preventObservers = true;
-		return { [disposeSymbol]:()=>{
+		return { __proto__:null, [disposeSymbol]:()=>{
 			this.#preventObservers = false;
 		} };
 	}

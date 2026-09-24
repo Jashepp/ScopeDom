@@ -241,7 +241,7 @@ export class pluginCloak {
 	 * @param {Object} attrib The cloak attribute information
 	 * @param {Object} state The state object (contains anchorScopeCtrl, onShowEvent, scope)
 	 * @param {string} exp The expression string to evaluate
-	 * @returns {any} The raw expression result (truthy → element is uncovered; falsy → kept cloaked)
+	 * @returns {any} The raw expression result (truthy -> element is uncovered; falsy -> kept cloaked)
 	 */
 	#runExpression(plugInfo,attrib,state,exp){
 		let { instance } = this;

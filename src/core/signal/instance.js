@@ -232,7 +232,8 @@ export class signalInstance {
 	}
 	
 	/**
-	 * Gets the signal value silently without any observers being involved.
+	 * Gets/Peeks the signal value silently without any dependancy-tracking / observers being involved.
+	 * No PULL-based signals are computed either.
 	 * 
 	 * @returns {any} The current signal value
 	 */

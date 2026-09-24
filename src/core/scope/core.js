@@ -217,7 +217,7 @@ export class scopeControllerContext {
 	 * 
 	 * @param {Function} cb Callback function to execute on next animation frame
 	 */
-	$onRAF(cb){ return timing.requestAnimation(cb); };
+	$onRAF(cb){ timing.requestAnimation(cb); };
 	
 	/**
 	 * Add a one-time animation frame callback.

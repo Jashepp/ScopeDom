@@ -7,9 +7,10 @@
  * 
  * It consists of four components:
  * 
- * 1. signalController: Registry for all signal instances, manages subscription lists,
- *    triggers updates, and handles signal proxy creation. Provides the central API
- *    that scope controllers delegate to for signal creation/management.
+ * 1. signalController: orchestrates observers and proxies. It tracks registered observers
+ *    (which signals they depend on) and triggers updates; it does NOT keep a registry of
+ *    signal instances - instances are created on demand, not stored centrally.
+ *    Provides the central API that scope controllers delegate to for signal creation/management.
  * 
  * 2. signalInstance: The reactive value with get/set semantics. On set, it notifies
  *    all registered signalObserver instances.
