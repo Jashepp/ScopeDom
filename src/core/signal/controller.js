@@ -653,16 +653,22 @@ export class signalController {
 	/**
 	 * Alias that creates a computed signal (PUSH or PULL based).
 	 * 
+	 * @see {@link computeSignalPull} signalController.computeSignalPull method
+	 * @see {@link computeSignalPush} signalController.computeSignalPush method
+	 * 
 	 * @param {Function} fn Compute callback function
 	 * @param {object} [options={}] Computed signal options
 	 * @param {boolean} [options.pull=true] Use PULL-based computation (default)
+	 * @param {boolean} [options.push=true] Use PUSH-based computation
 	 * @returns {[signalInstance, signalObserver, Function]} Tuple of [signal, observer, clear function]
 	 * @throws {TypeError} If fn is not a function
-	 * @see {@link computeSignalPull} signalController.computeSignalPull method
-	 * @see {@link computeSignalPush} signalController.computeSignalPush method
 	 */
 	computeSignal(fn,options={}){
-		options = { __proto__:null, pull:true, ...options };
+		options = { __proto__:null, ...options };
+		if(!('pull' in options) && 'push' in options) options.pull = !options.push;
+		else if(!('push' in options) && 'pull' in options) options.push = !options.pull;
+		else if(!options.pull && !options.push) options.pull = true;
+		else if(options.pull && options.push) options.push = false;
 		return options.pull ? this.computeSignalPull(fn,options) : this.computeSignalPush(fn,options);
 	}
 	
@@ -675,13 +681,14 @@ export class signalController {
 	 * The proxy supports arrays, Maps, Sets, and other iterable collections with special
 	 * handling for their methods.
 	 * 
+	 * @see {@link defineProxySignal} signalController.defineProxySignal method
+	 * @see {@link signalProxy} signalProxy class
+	 * 
 	 * @param {object} value Object to proxy (must be an object, not a primitive)
 	 * @param {signalInstance} [signal=null] Pre-existing signal for the target
 	 * @param {boolean} [useWeakRef=false] Use WeakRef (defaults to true for nested proxies)
 	 * @returns {signalProxy} Proxy of the passed in value
 	 * @throws {TypeError} If value is a primitive
-	 * @see {@link defineProxySignal} signalController.defineProxySignal method
-	 * @see {@link signalProxy} signalProxy class
 	 */
 	proxySignal(value,signal=null,useWeakRef=false){
 		if(value!==Object(value)) throw new TypeError("proxySignal target must not be a primitive");
@@ -691,6 +698,9 @@ export class signalController {
 	/**
 	 * Creates a signalProxy and defines a getter/setter on the target object.
 	 * 
+	 * @see {@link proxySignal} signalController.proxySignal method
+	 * @see {@link signalProxy} signalProxy class
+	 * 
 	 * @param {object} obj Target object to define the property on
 	 * @param {string} prop Property name to define
 	 * @param {object} value Object value to proxy (must be an object, not a primitive)
@@ -698,8 +708,6 @@ export class signalController {
 	 * @param {boolean} [silentFallback=false] Define primitives without signal proxy
 	 * @returns {signalProxy|any} Proxy of the passed in value, or the primitive value passed through with silentFallback
 	 * @throws {TypeError} If value is a primitive (use defineSignal instead), unless silentFallback is true
-	 * @see {@link proxySignal} signalController.proxySignal method
-	 * @see {@link signalProxy} signalProxy class
 	 */
 	defineProxySignal(obj,prop,value,signal=null,silentFallback=false){
 		if(!silentFallback && value!==Object(value)) throw new TypeError("defineProxySignal target must not be a primitive, try defineSignal instead");
