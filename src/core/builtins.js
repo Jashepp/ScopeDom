@@ -489,8 +489,8 @@ export class builtinAttributes {
 			let { signal, expFn } = instance.ensureExpressionSignal(element,name2);
 			if(signal){
 				let obs = signalCtrl.createObserver(); obs.recordSignal(signal);
-				let state = { __proto__:null, value:void 0, signal };
-				let extra = { __proto__:null, $attribute, get $value(){ return signal?.get(); }, get $oldValue(){ return state.value; } };
+				let state = { __proto__:null, oldValue:void 0, signal };
+				let extra = { __proto__:null, $attribute, get $value(){ return signal?.get(); }, get $oldValue(){ return state.oldValue; } };
 				let { runFn:watchFn } = instance.elementExecExp(elementScopeCtrl,watchValue,extra,{ __proto__:null, run:false });
 				obs.addListener(this.#attrSignal_watchListener.bind(this,state,watchFn));
 				instance.registerElementRelatedEvent(element,obs.clear.bind(obs));
@@ -508,7 +508,7 @@ export class builtinAttributes {
 	}
 	
 	#attrSignal_watchListener(state,watchFn,o,s,oVal,nVal){
-		state.value = state.signal?.getSilent();
+		state.oldValue = oVal;
 		watchFn();
 	}
 	
