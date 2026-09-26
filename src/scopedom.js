@@ -712,7 +712,7 @@ class ScopeDom {
 		this.onReadyListeners = null;
 		for(const fn of list) try{ fn(); }catch(err){ console.error(err); }
 		// Trigger $update for any plugins or applications that use it
-		this.scopeCtrl.$emit("$update");
+		this.scopeCtrl.$emitScopeUpdate();
 		// Force run compute queue to empty it
 		timing.deferNextCompute();
 		timing.queueCompute();

@@ -92,7 +92,7 @@ export class builtinAttributes {
 			}
 			// Listen for Update Scope
 			if((nameParts.length===1 || nameParts.length===2) && name==='update'){
-				this.#attrUpdate(element,attrib,elementScopeCtrl,options,name2,value);
+				this.#attrUpdate(element,attrib,elementScopeCtrl,options);
 				continue;
 			}
 			// Class Attribute
@@ -328,21 +328,21 @@ export class builtinAttributes {
 	 * @param {scopeElementAttribDefaults} attrib The $update attribute definition
 	 * @param {scopeElementController} elementScopeCtrl The scope element controller
 	 * @param {Map<string,scopeElementAttribOptionDefaults>} options Parsed attribute options
-	 * @param {string|null} [name2] Optional name suffix for scoped updates
-	 * @param {string|null} [value] Expression value from the attribute
 	 */
-	#attrUpdate(element,attrib,elementScopeCtrl,options,name2,value){
-		let suffix = null;
-		if(value===null){
-			value = this.instance.elementAttribFallbackOptionValue(attrib,['before','after']);
-			if(options.get('before')) suffix = ':before';
-			if(options.get('after')) suffix = ':after';
-		}
-		if(value?.length>0){
-			let { attribute:$attribute } = attrib;
-			let { runFn:updateCB } = this.instance.elementExecExp(elementScopeCtrl,value,{ __proto__:null, $attribute },{ __proto__:null, run:false });
+	#attrUpdate(element,attrib,elementScopeCtrl,options){
+		let [ name, name2 ] = attrib.nameParts;
+		let beforeOpt = options.get('before'), afterOpt = options.get('after');
+		for(let type of ['before','','after']){
+			let expValue = null, attrName = null;
+			if(beforeOpt && type==='before'){ expValue = beforeOpt.value; attrName = beforeOpt.attribute; }
+			else if(afterOpt && type==='after'){ expValue = afterOpt.value; attrName = afterOpt.attribute; }
+			else if(type===''){ expValue = attrib.value; attrName = attrib.attribute; }
+			else continue;
+			if(expValue===null || expValue?.length===0) continue;
+			// Setup $update listener
+			let { runFn:updateCB } = this.instance.elementExecExp(elementScopeCtrl,expValue,{ __proto__:null, $attribute:attrName },{ __proto__:null, run:false });
 			// Register events straight away
-			let evt = '$update'+(name2?.length>0?'-'+name2:'')+(suffix!==null?suffix:'');
+			let evt = '$update'+(name2?.length>0?'-'+name2:'')+(type!==''?':'+type:'');
 			let removeListener = elementScopeCtrl.ctrl.$on(evt,updateCB,{},true);
 			this.instance.registerElementRelatedEvent(element,removeListener);
 		}
