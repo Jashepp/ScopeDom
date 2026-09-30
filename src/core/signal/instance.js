@@ -82,6 +82,9 @@ export class signalInstance {
 	/** @type {boolean} Is already in get() operation */
 	#isGetting = true;
 	
+	/** @type {boolean} Is already in get() operation */
+	#coalesceChanges = true;
+	
 	/** @type {boolean} If signal needs recomputation for PULL-based computed signals */
 	#pendingPull = true;
 	
@@ -101,13 +104,14 @@ export class signalInstance {
 	 * @param {Function} [options.equalsFn=null] Custom equality function, `(a, b, signal)`, returns boolean
 	 */
 	constructor(signalCtrl,value,options={}){
-		let { useWeakRef, equalsFn } = options = { __proto__:null, useWeakRef:false, equalsFn:null, ...options };
+		let { useWeakRef, equalsFn, coalesceChanges } = options = { __proto__:null, useWeakRef:false, equalsFn:null, coalesceChanges:true, ...options };
 		// Re-use existing signal if value is a signalProxy or signalInstance
 		let resolved = resolveSignal(value,null,true);
 		if(resolved instanceof signalInstance) return resolved;
 		// Cofigure new signal
 		this.#ctrl = signalCtrl; this.#useWeakRef = !!useWeakRef && !!window.WeakRef;
 		this.#equalsFn = typeof equalsFn==="function" ? equalsFn : null;
+		this.#coalesceChanges = !!coalesceChanges;
 		if(value instanceof Promise || typeof value?.then==="function" || value instanceof signalInstance) this.set(value);
 		else this.#setInner(value);
 		this.#isGetting = false;
@@ -189,12 +193,17 @@ export class signalInstance {
 	 * This method creates a {@link signalObserver} instance and registers the provided callback.
 	 * The listener & observer can be deactivated by calling observer.clear().
 	 * 
+	 * The listener is invoked with: `( observer, signal, oldValue, newValue )`
+	 * 
+	 * Changes are coalesced by default, see `coalesceChanges` in signal options.
+	 * 
 	 * @param {Function} fn Listener callback function to invoke on signal changes
 	 * @returns {signalObserver} The signal signalObserver instance
 	 */
 	subscribe(fn){
 		let obs = this.#ctrl.createObserver();
-		obs.addListener(fn);
+		obs.recordSignal(this);
+		obs.addListener((obs,[[signal,oldValue,newValue]])=>fn(obs,signal,oldValue,newValue));
 		return obs;
 	}
 	

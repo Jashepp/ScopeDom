@@ -32,10 +32,8 @@ import { signalProxy, resolveSignal } from "./proxy.js";
  * the observer via {@link signalController.triggerChange}, and the observer's listeners
  * (connected to computed signals) then re-evaluate the dependency graph.
  * 
- * The flags (`isDeferring`, `isChanging`) implement batching and re-entry prevention:
- * - `isDeferring`: When true, a deferred notification is pending (via
- *   {@link timing.deferTask}). Additional calls to `triggerChange` are dropped
- *   to prevent duplicate executions.
+ * The flags (`isRecording` & `isChanging`) implement batching and re-entry prevention:
+ * - `isRecording`: When true, observers are recording for dependencies.
  * - `isChanging`: When true, listeners are currently executing; prevents re-entrant
  *   recursion when a listener itself triggers a change.
  * 
@@ -47,12 +45,14 @@ import { signalProxy, resolveSignal } from "./proxy.js";
  * @property {WeakSet<signalInstance>} signals - WeakSet of signals this observer depends on (recorded during recording mode)
  * @property {WeakSet<signalInstance>} signalsIgnore - WeakSet of signals to ignore during recording (eg, the signal being computed, to avoid self-dependency)
  * @property {Array<Function>} listeners - Array of listener callbacks invoked when dependent signals change; each called with (observer, signal, oldValue, newValue)
- * @property {boolean} isDeferring - Change notification has been deferred and not yet executed
  * @property {boolean} isChanging - Change notification listeners are currently executing (prevents re-entrant recursion)
  * @property {boolean} isRecording - Observer is currently in recording mode, tracking signal dependencies
  * @class signalObserver
  */
 export class signalObserver {
+	
+	#changes;
+	#changesBySignal;
 	
 	/**
 	 * Constructs a new signalObserver, with a reference to the parent signal controller.
@@ -67,7 +67,8 @@ export class signalObserver {
 		this.listeners = [];
 		this.isRecording = false;
 		this.isChanging = false;
-		this.isDeferring = false;
+		this.#changes = [];
+		this.#changesBySignal = new Map();
 	}
 	
 	/**
@@ -94,43 +95,57 @@ export class signalObserver {
 	/**
 	 * Triggers change notifications to all registered listeners.
 	 * 
-	 * Listeners are invoked with the arguments: signalObserver, signalInstance, old value, new value.
+	 * Listeners are invoked with an array of all stored changes: `( observer, [ [ signal, oldValue, newValue ], ... ] )`
 	 * 
 	 * Notifications are always deferred via {@link timing.deferTask}, rather than fired synchronously, which lets multiple changes be batched together.
 	 * 
-	 * The `isDeferring`, `isRecording`, and `isChanging` flags below gate this call; see the class-level description for their full meaning.
+	 * The `isRecording`, and `isChanging` flags gate this call; see the class-level description for their full meaning.
+	 * Except if both `isChanging` and `coalesce` are true, the changed newValue is updated.
 	 * 
 	 * @see {@link #callObserverListeners}
 	 * 
 	 * @param {signalInstance} signal The signal that changed
 	 * @param {any} oldValue The previous value before the change
 	 * @param {any} newValue The new value after the change
+	 * @param {boolean} coalesce True for multiple changes to coalesce into first oldValue + last newValue
 	 */
-	triggerChange(signal,oldValue,newValue){
-		if(this.isDeferring || this.isRecording || this.isChanging) return;
-		this.isDeferring = true;
-		timing.deferTask(this.#callObserverListeners.bind(this,signal,oldValue,newValue));
+	triggerChange(signal,oldValue,newValue,coalesce){
+		if(this.isRecording || (this.isChanging && !coalesce)) return;
+		let deferTask = false, store = !coalesce;
+		// Coalesce Change
+		if(coalesce){
+			if(this.#changesBySignal.has(signal)) this.#changesBySignal.get(signal)[2] = newValue;
+			else store = true;
+		}
+		// Store Change
+		if(store && !this.isChanging){
+			if(this.#changes.length===0) deferTask = true;
+			let item = [signal,oldValue,newValue];
+			this.#changesBySignal.set(signal,item);
+			this.#changes.push(item);
+		}
+		// Defer callObserverListeners
+		if(deferTask) timing.deferTask(this.#callObserverListenersBound);
 	}
 	
+	#callObserverListenersBound = this.#callObserverListeners.bind(this);
+	
 	/**
-	 * Call observer listeners with triggered change.
+	 * Call observer listeners with stored changes.
 	 * 
-	 * Used internally by {@link triggerChange}
+	 * Used internally by {@link triggerChange}. This runs inside a deferred {@link timing.deferTask}.
 	 * 
-	 * If `isChanging` is already true (a listener triggered another change) the run is skipped to prevent re-entrant recursion. Listener exceptions are caught and logged via console.error rather than propagated, since this runs inside a deferred {@link timing.deferTask}.
+	 * Listeners are called with (observer, [ [ signal, oldValue, newValue ], ... ])
 	 * 
 	 * @private
-	 * @param {signalInstance} signal The signal that changed
-	 * @param {any} oldValue The previous value before the change
-	 * @param {any} newValue The new value after the change
 	 */
-	#callObserverListeners(signal,oldValue,newValue){
-		if(this.isChanging) return;
-		this.isDeferring = false;
+	#callObserverListeners(){
 		this.isChanging = true;
-		for(let i=0,l=this.listeners.length; i<l; i++){
-			let listener = this.listeners[i];
-			try{ listener(this,signal,oldValue,newValue); } catch(err){ console.error(err); }
+		let changesArr = this.#changes;
+		this.#changes = [];
+		this.#changesBySignal.clear();
+		for(let listener of this.listeners){
+			try{ listener(this,changesArr); } catch(err){ console.error(err); }
 		}
 		this.isChanging = false;
 	}

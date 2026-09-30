@@ -533,7 +533,7 @@ class ScopeDom {
 	/**
 	 * Handle scope controller function execution.
 	 * 
-	 * Invokes `fn` with a single argument object: `scope` is the execExpression proxy (assignments on $scope therefore route through the signal proxy set trap, see exec.js #setResolve), along with `instance`, `controller`, and the signal-helper methods from {@link #scopeCtrlFnArgs} (signal, createSignal, defineSignal, assignSignals, computeSignal, proxySignal, defineProxySignal, preventUpdates, preventObservers, resolveSignal) bound to the signal controller.
+	 * Invokes `fn` with a single argument object: `scope` is the execExpression proxy (assignments on $scope therefore route through the signal proxy set trap, see exec.js #setResolve), along with `instance`, `controller`, `signalCtrl`, and the signal-helper methods from {@link #scopeCtrlFnArgs} (signal, createSignal, defineSignal, assignSignals, computeSignal, proxySignal, defineProxySignal, preventUpdates, preventObservers, resolveSignal) bound to the signal controller.
 	 * 
 	 * @param {Proxy|object} proxy The proxy object for scope access
 	 * @param {ScopeDomCtrlCallback} fn The controller function to execute
@@ -543,7 +543,7 @@ class ScopeDom {
 		let signalCtrl = this.scopeCtrl.signalCtrl, signalMethods = Object.fromEntries(
 			this.#scopeCtrlFnArgs.map(k=>[k,signalCtrl[k].bind(signalCtrl)])
 		);
-		fn.apply(proxy,[{ scope:proxy, instance:this, controller:this.scopeCtrl, ...signalMethods }]);
+		fn.apply(proxy,[{ scope:proxy, instance:this, controller:this.scopeCtrl, signalCtrl, ...signalMethods }]);
 	}
 	
 	// Element Scanning & Watching

@@ -156,7 +156,7 @@ export class signalController {
 	 * @param {any} newValue The new value after the change
 	 * @throws {TypeError} If signal is not a signalInstance instance
 	 */
-	triggerChange(signal,oldValue,newValue){
+	triggerChange(signal,oldValue,newValue,coalesce){
 		if(!(signal instanceof signalInstance)) throw new TypeError("triggerChange signal must be a signalInstance");
 		// Batch Recording
 		if(this.#batchStack!==null && this.#batchStack.length>0){
@@ -166,7 +166,7 @@ export class signalController {
 		// Trigger Change
 		else {
 			if(!this.#preventUpdates) for(let i=0,l=this.#observers.length,o; o=this.#observers[i], i<l; i++){
-				if(o.hasSignal(signal)) o.triggerChange(signal,oldValue,newValue);
+				if(o.hasSignal(signal)) o.triggerChange(signal,oldValue,newValue,coalesce);
 			}
 		}
 	}
@@ -567,7 +567,7 @@ export class signalController {
 		let recordingFn = this.isolateRecording(obs.wrapRecorder(fn));
 		let runFn = this.#computeSignalPushListener.bind(this,obs,computeSignal,recordingFn);
 		obs.addListener(runFn);
-		try{ runFn(); } catch(err){ console.error(err); }
+		try{ runFn(obs,[[computeSignal,void 0,void 0]]); } catch(err){ console.error(err); }
 		let result = [ computeSignal, obs, obs.clear.bind(obs) ];
 		result[disposeSymbol] = result[2];
 		return result;
@@ -583,9 +583,9 @@ export class signalController {
 	 * @param {signalInstance} computeSignal The computed signal to update
 	 * @param {Function} recordingFn Isolated recording function to execute
 	 */
-	#computeSignalPushListener(obs,computeSignal,recordingFn){
+	#computeSignalPushListener(obs,computeSignal,recordingFn,...args){
 		obs.clearSignals();
-		computeSignal.set(recordingFn());
+		computeSignal.set(recordingFn(...args));
 	}
 	
 	/**
@@ -638,15 +638,13 @@ export class signalController {
 	 * @param {object} state State object with `isUpdating` flag
 	 * @param {signalInstance} computeSignal The computed signal to update
 	 * @param {signalObserver} depObserver The dependency observer that triggered
-	 * @param {signalInstance} depSignal The dependency signal that changed
-	 * @param {any} oldValue Previous value of the dependency
-	 * @param {any} newValue New value of the dependency
+	 * @param {signalInstance} changesArr List of observer signal changes
 	 */
-	#computeSignalPullUpdater(state,computeSignal,depObserver,depSignal,oldValue,newValue){
+	#computeSignalPullUpdater(state,computeSignal,depObserver,changesArr){
 		if(state.isUpdating) return;
 		state.isUpdating = true;
 		computeSignal.invalidatePull();
-		computeSignal.changed(oldValue);
+		computeSignal.changed();
 		state.isUpdating = false;
 	}
 	

@@ -488,11 +488,12 @@ export class builtinAttributes {
 		if(watchValue?.length>0 && !watchOpt.isDefault && (!computeOpt || computeOpt?.value!==watchValue)){
 			let { signal, expFn } = instance.ensureExpressionSignal(element,name2);
 			if(signal){
-				let obs = signalCtrl.createObserver(); obs.recordSignal(signal);
 				let state = { __proto__:null, oldValue:void 0, signal };
 				let extra = { __proto__:null, $attribute, get $value(){ return signal?.get(); }, get $oldValue(){ return state.oldValue; } };
+				// watchFn does not need to be wrapped, we're only watching this one signal, not its dependencies
 				let { runFn:watchFn } = instance.elementExecExp(elementScopeCtrl,watchValue,extra,{ __proto__:null, run:false });
-				obs.addListener(this.#attrSignal_watchListener.bind(this,state,watchFn));
+				/** @see {signalInstance.subscribe} Using subscribe since that creates a focused observer */
+				let obs = signal.subscribe(this.#attrSignal_watchListener.bind(this,state,watchFn));
 				instance.registerElementRelatedEvent(element,obs.clear.bind(obs));
 			}
 		}
@@ -507,8 +508,8 @@ export class builtinAttributes {
 		}
 	}
 	
-	#attrSignal_watchListener(state,watchFn,o,s,oVal,nVal){
-		state.oldValue = oVal;
+	#attrSignal_watchListener(state,watchFn,obs,signal,oldValue,newValue){
+		state.oldValue = oldValue;
 		watchFn();
 	}
 	
