@@ -193,7 +193,8 @@ export class signalInstance {
 	 * This method creates a {@link signalObserver} instance and registers the provided callback.
 	 * The listener & observer can be deactivated by calling observer.clear().
 	 * 
-	 * The listener is invoked with: `( observer, signal, oldValue, newValue )`
+	 * When `coalesceChanges:true` (default), the listener is invoked with: `( observer, signal, oldValue, newValue )`
+	 * Otherwise when `false`, the listener is invoked with: `( observer, [ [ signal, oldValue, newValue ], ... ] )`
 	 * 
 	 * Changes are coalesced by default, see `coalesceChanges` in signal options.
 	 * 
@@ -203,7 +204,8 @@ export class signalInstance {
 	subscribe(fn){
 		let obs = this.#ctrl.createObserver();
 		obs.recordSignal(this);
-		obs.addListener((obs,[[signal,oldValue,newValue]])=>fn(obs,signal,oldValue,newValue));
+		if(this.#coalesceChanges) obs.addListener((obs,[[signal,oldValue,newValue]])=>fn(obs,signal,oldValue,newValue));
+		else obs.addListener(fn);
 		return obs;
 	}
 	
