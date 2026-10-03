@@ -14,25 +14,35 @@ import { execExpression, execExpOptionsDefaults } from "../exec.js";
 import ScopeDom from "../../scopedom.js";
 
 /**
- * Scope Expression - static helper class for executing and building expressions within
- * the ScopeDom scope hierarchy.
+ * Scope Expression - gateway between ScopeDom's scope hierarchy and the expression
+ * compilation engine (execExpression in exec.js).
  * 
- * Resolves all applicable scopes for an expression and either builds an executable function
- * for later use or executes it immediately. Accumulates scopes from the scope hierarchy,
- * additional scopes, and element controllers, then delegates to plugins for expression
- * modification before passing the expression to execExpression for building or running.
+ * Responsibilities:
+ * 1. Resolve the full scope chain for an element (walk up parentCtrl chain).
+ * 2. Accumulate additional scopes (element scopes, extra scopes, contexts).
+ * 3. Resolve the source element for expression caching.
+ * 4. Run plugin `onExpression` hooks (allow expression mutation in-place).
+ * 5. Delegate to execExpression.buildExp or execExpression.runExp.
+ * 
+ * The only public method is {@link scopeExpression.prepareExpression} which handles
+ * both run-mode (execute now) and build-mode (compile for later).
  * 
  * @class scopeExpression
  */
 export class scopeExpression {
 	
 	/**
-	 * Execute an expression on an element controller with resolved scopes.
+	 * Resolve scopes and compile (and optionally execute) an expression for an element.
 	 * 
-	 * This is the main entry point for both running an expression now (run=true) and building
-	 * a deferred expression for later execution (run=false). The build mode produces a result
-	 * object you can run later via runFn, while the run mode returns the same result object
-	 * with result already populated (a Promise if the expression is async).
+	 * This is the single entry point for all expression execution in ScopeDom.
+	 * It assembles the complete scope context, runs plugin expression hooks, then
+	 * delegates to execExpression.
+	 * 
+	 * Execution modes:
+	 * - run=true (default): compiles and immediately executes the expression.
+	 *   Returns the result object with `.result` populated (a Promise if async).
+	 * - run=false: compiles only, returns the result object with `.runFn` you
+	 *   can call later. The compiled function is cached per source element.
 	 * 
 	 * @see {@link execExpResult} The result object structure (typedef defined in exec.js), shared by buildExp and runExp.
 	 * 
@@ -75,9 +85,16 @@ export class scopeExpression {
 	/**
 	 * Collect main scopes by walking up the controller hierarchy.
 	 * 
-	 * Iterates from the current controller to its ancestors until an isolated controller is found or parentCtrl becomes null,
-	 * pushing each controller's scope into mainScopes. Also builds msProtoList from all main scope prototype chains for deduplication.
-	 * Mutates the scopes object in-place.
+	 * Starting from the element's controller, walks up via `parentCtrl` to collect
+	 * each controller's scope into `scopes.mainScopes`. Stops at:
+	 * - The root scope controller (parentCtrl is null), or
+	 * - An isolated scope controller (isolated=true)
+	 * 
+	 * Also builds `scopes.msProtoList` from all collected scope prototype chains,
+	 * used later to deduplicate during other scope resolution.
+	 * 
+	 * The first scope pushed is always the element controller's own scope;
+	 * subsequent scopes are its ancestors in the hierarchy.
 	 * 
 	 * @private
 	 * @param {scopeElementController} eCtrl Starting controller
@@ -94,12 +111,18 @@ export class scopeExpression {
 	}
 	
 	/**
-	 * Accumulate additional scopes from extraScopes and elementScopes.
+	 * Accumulate additional (read-only) scopes from multiple sources.
 	 * 
-	 * Adds scope objects (and their prototype chains) to the otherScopes Set while avoiding duplicates
-	 * against mainScope prototypes. Handles nested element controller scopes via cacheElementScopeCtrls.
-	 * Also adds the element context ($this, $$, etc.) to otherScopes unless hideDocument is true.
-	 * The controller context ($update, $emit, $on, $signal, etc.) is added unconditionally instead.
+	 * Sources processed in order (each scope added to `scopes.otherScopes`):
+	 * 1. extraScopes: user-provided extra scope objects
+	 * 2. elementScopes: scope objects for associated DOM elements
+	 * 3. Element controller contexts: cached element scopes from cacheElementScopeCtrls
+	 * 4. Element context: $this, $$(), $parent, DOM event helpers (unless hideDocument=true)
+	 * 5. Scope controller context: $update, $emit, $on, $signal, etc.
+	 * 
+	 * All scopes from sources 1-4 are added to scopeUseOwn (property resolution uses
+	 * hasOwnProperty rather than the `in` operator). Each scope is de-duplicated
+	 * against existing mainScope prototypes and previously-added otherScopes.
 	 * 
 	 * @private
 	 * @param {scopeElementController} eCtrl Starting controller
@@ -107,7 +130,7 @@ export class scopeExpression {
 	 * @param {object} scopes Scope accumulator object with scopeUseOwn, msProtoList, otherScopes mutated in-place
 	 * @param {Array<object>|null} extraScopes Extra scope objects to include
 	 * @param {Array<object>|null} elementScopes Arrays of element/scope pairs to include
-	 * @param {object} options Execution options (hideDocument flag)
+	 * @param {object} options Execution options (hideDocument, fnThis, etc)
 	 * @returns {void}
 	 */
 	static #iterateOtherScopes(eCtrl,instance,scopes,extraScopes,elementScopes,options){

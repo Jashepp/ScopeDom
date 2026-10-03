@@ -23,7 +23,7 @@ import {
  * Execute & Build Expressions - the engine that turns ScopeDom expression strings
  * into scope-aware JavaScript functions.
  * 
- * Transforms expression text (like `count + 1` or `$this.className = 'active'`) into
+ * Transforms expression text (such as `count + 1` or `$this.className = 'active'`) into
  * executable JavaScript via code generation (try-catch, with($sdProxy)), caches it per
  * source element to avoid redundant compilation, and resolves which scopes participate in
  * read vs write access.
@@ -136,9 +136,16 @@ const execExpProxyDefaults = {
  * from scope resolution, generates function bodies, and caches compiled functions
  * to avoid redundant evaluation.
  * 
- * @class execExpression
+ * Two entry points:
+ * - {@link execExpression.buildExp} - compile an expression into a bound function,
+ *   cache it per source element, and return the result object (without executing).
+ * - {@link execExpression.runExp} - build the expression and immediately execute it,
+ *   returning the result (or a Promise if async).
+ * 
  * @see {@link execExpResult} For the result structure of buildExp/runExp
  * @see {@link execExpressionProxy} For the Proxy-based scope access mechanism
+ * 
+ * @class execExpression
  */
 export class execExpression {
 	
@@ -150,7 +157,7 @@ export class execExpression {
 	static #expCache = new WeakMap();
 	
 	/**
-	 * Generate wrapper code for an expression.
+	 * Generate the wrapped function code for an expression.
 	 * 
 	 * Creates a function that:
 	 * 1. Wrap with try-catch
@@ -174,7 +181,7 @@ export class execExpression {
 	}
 	
 	/**
-	 * Generate key for expression cache.
+	 * Generate the cache key for an expression function.
 	 * 
 	 * @private
 	 * @param {string} expression The expression to generate code for
@@ -222,19 +229,19 @@ export class execExpression {
 		if(expression!==String(expression)) throw new Error("Invalid expression: "+expression);
 		options = { __proto__:null, ...execExpOptionsDefaults, ...options };
 		let { fnThis, useAsync, scopeUseOwn, silentHas, globalsHide, throwGlobals, scopeCtrl, useSignalProxy, returnSignals, argument, sourceElement } = options;
-		// Auto-detect async if expression contains 'await'. This could be done in a better way, but that would sacrifice performance.
+		// Auto-detect async from `await` in expression. Cheap string check; could be more robust but that would add cost to every expression compilation.
 		useAsync = options.useAsync = useAsync || expression.indexOf('await')!==-1;
 		let globalObj = window, globalCatch = noopFn, unscopables = execExpProxyDefaults.unscopables, args = execExpression.#expDefaultArguments;
-		// If both globalsHide and throwGlobals are true, throw on global access
+		// When globalsHide && throwGlobals: throw on global access attempts
 		if(globalsHide && throwGlobals) globalCatch = execExpression.throwGlobalAccessError;
-		// If argument is provided, add it to unscopables so it doesn't shadow the expression proxy
+		// Add argument name to unscopables so it doesn't shadow the expression proxy
 		if(argument?.length>0){ unscopables = { __proto__:null, [argument]:true }; args = args.concat(argument); }
-		// Turn mainScopes & extraScopes into getScopes & setScopes
+		// Build getScopes (read) and setScopes (write)
 		let { getScopes, setScopes } = execExpression.#parseScopes(mainScopes,extraScopes);
-		// Create proxy with resolved options
+		// Assemble proxy state and create the expression proxy
 		let proxyObj = { __proto__:null, ...execExpProxyDefaults, mainScopes, getScopes, setScopes, scopeUseOwn, silentHas, globalObj, globalsHide, globalCatch, scopeCtrl, useSignalProxy, returnSignals, unscopables };
 		let proxy = new execExpressionProxy(proxyObj);
-		// Retrieve function from cache (per source element, keyed by expression + options)
+		// Expression caching: same expression on same element -> same compiled function
 		let runFn, fnKey, expCache = execExpression.#expCache, genFn, cacheMap, logFnError = noopFn;
 		if(sourceElement){
 			fnKey = this.#genExpKey(expression,options,args);
@@ -546,13 +553,23 @@ export class execExpressionProxy {
 	static preventExtensions(obj){ return false; }
 	
 	/**
-	 * Resolve and get a property value. Also handles signals.
+	 * Resolve and return a property value through the expression proxy's get path.
 	 * 
-	 * This method:
-	 * 1. Gets the property value using Reflect.get
-	 * 2. If useSignalProxy:
-	 *    2a. Checks if the value or its descriptor is a signalInstance
-	 *    2b. If a configurable value isn't a signal and isn't primitive, it auto-creates a signal proxy for reactive access
+	 * This method gets the property value using `Reflect.get`.
+	 * 
+	 * Signal proxy integration (when `useSignalProxy=true` and `signalCtrl` is available):
+	 * 1. If property is already a signal (descriptor.value or descriptor.get[signalSymb]),
+	 *    return the signal or its resolved value.
+	 * 2. If value is a signalProxy/signalInstance, resolve and return its value.
+	 * 3. If value is non-primitive and not already a signal:
+	 *    - Check descriptor gate: property is either not defined, or configurable,
+	 *      and not getter-only (getter without setter).
+	 *    - If gate passes: call defineProxySignal on the target scope to install a
+	 *      reactive getter/setter pair, then return the reactive wrapper (write-on-read).
+	 *    - Important: this step mutates the target scope object by defining reactive
+	 *      getter/setter pairs on the property. This is intentional for signalProxyAll
+	 *      mode but is a side effect on read.
+	 * 4. Return the value as-is otherwise.
 	 * 
 	 * @private
 	 * @param {execExpressionProxy} obj Proxy options/state
@@ -594,12 +611,19 @@ export class execExpressionProxy {
 	}
 	
 	/**
-	 * Resolve and set a property value. Also handles signals.
+	 * Resolve and set a property value through the expression proxy's set path.
 	 * 
-	 * This method:
-	 * 1. Gets the property descriptor
-	 * 2. If the setter or value is a signalInstance, delegates to the signal's set method
-	 * 3. Otherwise, uses Reflect.set for standard property setting
+	 * Signal proxy integration (when `useSignalProxy=true` and `signalCtrl` is available):
+	 * 1. If the property already has a signal setter (descriptor.set[signalSymb]) or
+	 *    a signal value descriptor (descriptor.value instanceof signalInstance),
+	 *    delegate to the signal's set method (standard signal update).
+	 * 2. If property has no existing descriptor (new property):
+	 *    - Resolve the value (unwrap if it's a signalProxy/signalInstance).
+	 *    - Create a new signalInstance for primitive values; keep existing signal for signal values.
+	 *    - Call defineProxySignal to install reactive getter/setter on the scope, set the value,
+	 *      and call signal.changed() to notify observers.
+	 * 3. Otherwise: use Reflect.set (plain property write, no signal created - for existing
+	 *    non-signal properties or when useSignalProxy is false).
 	 * 
 	 * @private
 	 * @param {execExpressionProxy} obj Proxy options/state

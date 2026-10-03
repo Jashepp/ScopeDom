@@ -44,7 +44,7 @@ import { signalProxy, resolveSignal } from "./proxy.js";
  * @property {signalController} ctrl - The parent signal controller that manages this observer's lifecycle and notification callbacks
  * @property {WeakSet<signalInstance>} signals - WeakSet of signals this observer depends on (recorded during recording mode)
  * @property {WeakSet<signalInstance>} signalsIgnore - WeakSet of signals to ignore during recording (eg, the signal being computed, to avoid self-dependency)
- * @property {Array<Function>} listeners - Array of listener callbacks invoked when dependent signals change; each called with (observer, signal, oldValue, newValue)
+ * @property {Array<Function>} listeners - Array of listener callbacks invoked when dependent signals change; each called with `( observer, [ [ signal, oldValue, newValue ], ... ] )`
  * @property {boolean} isChanging - Change notification listeners are currently executing (prevents re-entrant recursion)
  * @property {boolean} isRecording - Observer is currently in recording mode, tracking signal dependencies
  * @class signalObserver
