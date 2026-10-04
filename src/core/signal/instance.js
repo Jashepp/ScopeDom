@@ -175,7 +175,9 @@ export class signalInstance {
 	 * This method marks the signal as needing recomputation so that subsequent reads will trigger
 	 * listener callbacks to refresh dependent computations.
 	 */
-	invalidatePull(){ this.#pendingPull = true; }
+	invalidatePull(){
+		this.#pendingPull = true;
+	}
 	
 	/**
 	 * Adds a listener callback that is invoked on each signal read (for PULL-based compute signals only)
@@ -185,7 +187,9 @@ export class signalInstance {
 	 * 
 	 * @param {Function} fn Listener callback function
 	 */
-	addPullListener(fn){ this.#pullListeners.push(fn); }
+	addPullListener(fn){
+		this.#pullListeners.push(fn);
+	}
 	
 	/**
 	 * Subscribes to signal updates with a listener callback.
@@ -219,7 +223,9 @@ export class signalInstance {
 	 * 
 	 * @see {@link signalObserver}
 	 */
-	record(){ this.#ctrl.triggerRecording(this); }
+	record(){
+		this.#ctrl.triggerRecording(this);
+	}
 	
 	/**
 	 * Notifies all observers that have this signal recorded as a dependency.
@@ -355,42 +361,6 @@ export class signalInstance {
 	set value(value){ this.set(value); }
 	
 	/**
-	 * Returns the signal's value as a string.
-	 * 
-	 * Delegates to the value's toString() method if available.
-	 * 
-	 * @returns {string} The signal's value as a string, or undefined if value.toString doesn't exist
-	 */
-	// get toString(){ let v=this.get(); return v?.toString?.bind(v); }
-	
-	/**
-	 * Returns the signal's value as a locale-specific string.
-	 * 
-	 * Delegates to the value's toLocaleString() method if available.
-	 * 
-	 * @returns {string} signal's value as a locale-specific string, or undefined if value.toLocaleString doesn't exist
-	 */
-	// get toLocaleString(){ let v=this.get(); return v?.toLocaleString?.bind(v); }
-	
-	/**
-	 * Returns the signal's value as JSON.
-	 * 
-	 * Delegates to the value's toJSON() method if available.
-	 * 
-	 * @returns {any} The signal's value as JSON, or undefined if value.toJSON doesn't exist
-	 */
-	// get toJSON(){ let v=this.get(); return v?.toJSON?.bind(v); }
-	
-	/**
-	 * Returns the signal's value as a primitive.
-	 * 
-	 * Delegates to the value's valueOf() method if available.
-	 * 
-	 * @returns {any} The signal's value as a primitive, or the raw value itself if value.valueOf doesn't exist
-	 */
-	// valueOf(){ let v=this.get(); return v?.valueOf?v?.valueOf?.():v; }
-	
-	/**
 	 * Allows the signal to be used with the Promise method .then().
 	 * 
 	 * By implementing then(), signals become "thenable" and can be treated as Promises, including with await.
@@ -400,53 +370,5 @@ export class signalInstance {
 	 * @returns {Promise} A Promise that contains the signal's value
 	 */
 	then(resolve,reject=void 0){ return Promise.resolve(this.get()).then(resolve,reject); }
-	
-	/**
-	 * Returns the string tag for the signal.
-	 * 
-	 * Returns the value's Symbol.toStringTag if available, otherwise returns "ScopeDom.signalInstance".
-	 * 
-	 * @returns {string} The value's Symbol.toStringTag, otherwise returns "ScopeDom.signalInstance"
-	 */
-	// get [Symbol.toStringTag](){ return this.get()?.[Symbol.toStringTag] || "ScopeDom.signalInstance"; }
-	
-	/**
-	 * Returns an iterator for the signal's value.
-	 * 
-	 * Delegates to the value's Symbol.iterator method if available, enabling for...of loops.
-	 * 
-	 * @returns {Iterator} An iterator for the signal's value, or undefined if value[Symbol.iterator] doesn't exist
-	 */
-	// [Symbol.iterator](){ return Iterator.from ? Iterator.from(this.get()) : this.get()?.[Symbol.iterator]?.(); }
-	
-	/**
-	 * Converts the signal's value to a primitive type.
-	 * 
-	 * This method implements Symbol.toPrimitive, which JavaScript calls during operations like:
-	 * - String conversion (eg, `+value`, `${value}`)
-	 * - Numeric conversion (eg, `value + 0`)
-	 * - Comparison operators (eg, value == 42)
-	 * 
-	 * The hint parameter indicates the desired primitive type per ECMAScript spec:
-	 * - 'default': Used for == operator, returns value as-is
-	 * - 'string': Returns string representation via template literal `${v}`
-	 * - 'number': Returns numeric value via unary plus +v
-	 * 
-	 * Delegates to the value's Symbol.toPrimitive method if available.
-	 * 
-	 * For unknown hints, a console.info warning is logged for debugging purposes.
-	 * 
-	 * @param {string} hint The desired primitive type ('default', 'string', or 'number')
-	 * @returns {any} The converted primitive value (type depends on hint), or undefined if unknown hint
-	 */
-	// [DEPRECATED] [Symbol.toPrimitive] - We shouldn't have value coercion in signals, as it can lead to unexpected behavior. Use explicit get() instead.
-	// [Symbol.toPrimitive](hint){
-	// 	let v=this.get(), fn=v?.[Symbol.toPrimitive];
-	// 	if(fn) return fn(hint);
-	// 	if(hint==='default') return v;
-	// 	if(hint==='string') return `${v}`;
-	// 	if(hint==='number') return +v;
-	// 	console.info('ScopeDom.signalInstance [Symbol.toPrimitive](hint) Unknown hint:',hint);
-	// }
 	
 }
