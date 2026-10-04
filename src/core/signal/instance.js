@@ -233,9 +233,11 @@ export class signalInstance {
 	 * @see {@link signalObserver}
 	 * 
 	 * @param {any} [oldValue] The old value to pass to observers
+	 * @param {any} [newValue] The new value to pass to observers
 	 */
-	changed(oldValue=void 0){
-		this.#ctrl.triggerChange(this,oldValue,this.#value);
+	changed(oldValue=void 0,newValue=this.#value){
+		if(newValue===this.#ctrl.symbolComputePullChange) newValue = void 0;
+		this.#ctrl.triggerChange(this,oldValue,newValue,this.#coalesceChanges);
 	}
 	
 	/**

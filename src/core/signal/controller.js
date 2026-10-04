@@ -74,6 +74,8 @@ export class signalController {
 	/** @type {Array<Map>|null} Stack of batch maps (signal -> oldValue). null or empty when not batching. */
 	#batchStack = null;
 	
+	symbolComputePullChange = Symbol('$signalController.symbolComputePullChange');
+	
 	/**
 	 * Constructs a new signalController with a reference to the parent scope controller.
 	 * 
@@ -160,6 +162,7 @@ export class signalController {
 	 */
 	triggerChange(signal,oldValue,newValue,coalesce){
 		if(!(signal instanceof signalInstance)) throw new TypeError("triggerChange signal must be a signalInstance");
+		if(this.#preventUpdates) return;
 		// Batch Recording
 		if(this.#batchStack!==null && this.#batchStack.length>0){
 			let currentMap = this.#batchStack[this.#batchStack.length-1];
@@ -167,7 +170,7 @@ export class signalController {
 		}
 		// Trigger Change
 		else {
-			if(!this.#preventUpdates) for(let i=0,l=this.#observers.length,o; o=this.#observers[i], i<l; i++){
+			for(let i=0,l=this.#observers.length,o; o=this.#observers[i], i<l; i++){
 				if(o.hasSignal(signal)) o.triggerChange(signal,oldValue,newValue,coalesce);
 			}
 		}
@@ -609,7 +612,7 @@ export class signalController {
 		let state = { isUpdating: false }
 		let recordingFn = this.isolateRecording(obs.wrapRecorder(fn));
 		computeSignal.addPullListener(this.#computeSignalPullListener.bind(this,obs,computeSignal,recordingFn));
-		obs.addListener(this.#computeSignalPullUpdater.bind(this,state,computeSignal));
+		obs.addListener(this.#computeSignalPullObserveChange.bind(this,state,computeSignal));
 		computeSignal.invalidatePull();
 		let result = [ computeSignal, obs, obs.clear.bind(obs) ];
 		result[disposeSymbol] = result[2];
@@ -632,7 +635,9 @@ export class signalController {
 	}
 	
 	/**
-	 * PULL updater listener: invalidates and changes the computed signal when any dependency changes.
+	 * PULL updater listener: invalidates the computed signal when ANY dependency changes.
+	 * A change notification is sent out to any observers that watch this compute signal.
+	 * Since the compute callback is not called here, we cannot get or pass the new value along.
 	 * 
 	 * Prevents re-entrant updates via `state.isUpdating` flag.
 	 * 
@@ -640,13 +645,13 @@ export class signalController {
 	 * @param {object} state State object with `isUpdating` flag
 	 * @param {signalInstance} computeSignal The computed signal to update
 	 * @param {signalObserver} depObserver The dependency observer that triggered
-	 * @param {signalInstance} changesArr List of observer signal changes
+	 * @param {signalInstance} changesArr List of dependancy signal changes
 	 */
-	#computeSignalPullUpdater(state,computeSignal,depObserver,changesArr){
+	#computeSignalPullObserveChange(state,computeSignal,depObserver,changesArr){
 		if(state.isUpdating) return;
 		state.isUpdating = true;
 		computeSignal.invalidatePull();
-		computeSignal.changed();
+		computeSignal.changed(computeSignal.getSilent(),this.symbolComputePullChange);
 		state.isUpdating = false;
 	}
 	

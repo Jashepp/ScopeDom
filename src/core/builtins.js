@@ -664,6 +664,7 @@ export class builtinAttributes {
 	}
 	
 	#attrSignal_watchListener(state,watchFn,obs,signal,oldValue,newValue){
+		if(newValue===void 0 && oldValue===signal.getSilent()) return; // Ignore same-value changes
 		state.oldValue = oldValue;
 		watchFn();
 	}
