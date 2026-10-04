@@ -100,6 +100,11 @@ export class builtinAttributes {
 				this.#attrClass(element,attrib,elementScopeCtrl,options,value,onReadyQueue);
 				continue;
 			}
+			// Style Attribute
+			if(nameParts.length===1 && name==='style' && value!==null){
+				this.#attrStyle(element,attrib,elementScopeCtrl,options,value,onReadyQueue);
+				continue;
+			}
 			// Signal Attribute (lowercase keys)
 			if(nameParts.length===2 && name==='signal' && name2?.length>0){
 				this.#attrSignal(element,attrib,elementScopeCtrl,options,name2,value);
@@ -159,6 +164,11 @@ export class builtinAttributes {
 			// Class Attribute
 			if(nameParts.length===1 && name==='class' && attrib.value!==null){
 				this.#attrClassUndo(element,attrib,elementScopeCtrl,options);
+				continue;
+			}
+			// Style Attribute
+			if(nameParts.length===1 && name==='style' && attrib.value!==null){
+				this.#attrStyleUndo(element,attrib,elementScopeCtrl,options);
 				continue;
 			}
 		}
@@ -465,6 +475,149 @@ export class builtinAttributes {
 	
 	#attrClass_filterArray(k){ return typeof k==='string' && k.length>0; }
 	#attrClass_filterEntries([k,v]){ return typeof k==='string' && k.length>0; }
+	
+	/**
+	 * $style attribute handler: update css properties from expression result.
+	 * 
+	 * @private
+	 * @param {HTMLElement} element The element
+	 * @param {scopeElementAttribDefaults} attrib The $style attribute definition
+	 * @param {scopeElementController} elementScopeCtrl The scope element controller
+	 * @param {Map<string,scopeElementAttribOptionDefaults>} options Parsed attribute options
+	 * @param {string|null} [value] Expression value
+	 * @param {Array<Function>} onReadyQueue Queue for deferred callbacks
+	 */
+	#attrStyle(element,attrib,elementScopeCtrl,options,value,onReadyQueue){
+		let instance = this.instance;
+		let { attribute:$attribute } = attrib;
+		let defaultStyles = element.getAttribute('style') ?? '';
+		element[this.#attrStyleDefaultSymbol] = defaultStyles;
+		element[this.#attrStyleAbortSymbol] = { __proto__:null, abort:false };
+		let { runFn } = instance.elementExecExp(elementScopeCtrl,value,{ __proto__:null, $attribute, $original:defaultStyles },{ __proto__:null, run:false, useReturn:true });
+		let obs = instance.scopeCtrl.signalCtrl.createObserver();
+		runFn = obs.wrapRecorder(runFn);
+		let computeState = { __proto__:null, currentProps:[] };
+		let computeFn = this.#attrStyle_compute.bind(this,element,obs,runFn,defaultStyles,computeState);
+		let renderFn = this.#attrStyle_render.bind(this,element);
+		let updateFn = timing.queueComputeThenRender.bind(null,computeFn,renderFn);
+		onReadyQueue.push(updateFn);
+		obs.addListener(updateFn);
+		instance.registerElementRelatedEvent(element,obs.clear.bind(obs));
+		let removeListener = elementScopeCtrl.ctrl.$on('$update',updateFn,{},true);
+		instance.registerElementRelatedEvent(element,removeListener);
+	}
+	
+	#attrStyleDefaultSymbol = Symbol('$attrStyleDefault');
+	#attrStyleAbortSymbol = Symbol('$attrStyleAbortSymbol');
+	#attrStyleClearProp = [ null, false ];
+	
+	/**
+	 * Undo $style attribute changes on element disconnect.
+	 * 
+	 * Restores the element's original `style` attribute from the default value stored during
+	 * #attrStyle setup. If the default was empty, removes the `style` attribute entirely.
+	 * Sets the abort flag so no further renders occur after restore.
+	 * 
+	 * @private
+	 * @param {HTMLElement} element The element being disconnected
+	 * @param {scopeElementAttribDefaults} attrib The $style attribute definition
+	 * @param {scopeElementController} elementScopeCtrl The scope element controller
+	 * @param {Map<string,scopeElementAttribOptionDefaults>} options Parsed attribute options
+	 */
+	#attrStyleUndo(element,attrib,elementScopeCtrl,options){
+		if(!(this.#attrStyleDefaultSymbol in element)) return;
+		let value = element[this.#attrStyleDefaultSymbol];
+		if((value??'')==='') element.removeAttribute('style');
+		else element.setAttribute('style',value);
+		delete element[this.#attrStyleDefaultSymbol];
+		element[this.#attrStyleAbortSymbol].abort = true;
+	}
+	
+	/**
+	 * Compute the new styles from the $style expression result.
+	 * 
+	 * Clears signal observations for the current frame, then evaluates the compiled
+	 * expression through the observer's recording scope. Handles three result types:
+	 *  - string: concatenated with default styles (semicolon-separated)
+	 *  - Array / Set: filtered, joined, and appended after default styles
+	 *  - Map / Object: processed as style property-value map with conditional and
+	 *    !important handling; removed properties are marked for cleanup
+	 * Returns the computed style string or object for rendering.
+	 * 
+	 * @private
+	 * @param {HTMLElement} element The target element
+	 * @param {signalObserver} obs The signal observer used for recording signal access
+	 * @param {Function} runFn Compiled expression function (wrapped by obs.wrapRecorder)
+	 * @param {string} defaultStyles Original `style` attribute value at connect time
+	 * @param {object} computeState State object tracking current property list
+	 * @returns {string|object|undefined} The computed style for rendering, or undefined if the abort flag is set
+	 */
+	#attrStyle_compute(element,obs,runFn,defaultStyles,computeState){
+		if(element[this.#attrStyleAbortSymbol].abort) return;
+		obs.clearSignals();
+		let result = runFn();
+		// String
+		if(typeof result==='string') return defaultStyles.length>0 ? defaultStyles+';'+result : result;
+		// If array, simply append it after default styles
+		else if(result instanceof Array || result instanceof Set){
+			let styleList = Array.from(result).filter(this.#attrStyle_filterArray);
+			return defaultStyles.length>0 ? defaultStyles+';'+styleList.join(';') : styleList.join(';');
+		}
+		// Object
+		else if(result===Object(result)){
+			let stylesObjEntries = result instanceof Map ? Array.from(result.entries()) : Object.entries(result);
+			let stylesObj = Object.fromEntries(stylesObjEntries);
+			// Set new properties
+			for(let [k,v] of stylesObjEntries){ // { prop:value } { prop: cond ? value : '' }
+				if(v instanceof Array){
+					if(v.length===2) v = v[0] ? v[1] : null; // { prop:[cond,value] }
+					else if(v.length===3) v = v[0] ? v[1] : v[2]; // { prop:[cond,valueTrue,valueFalse] }
+				}
+				if(typeof v==='number') v = String(v);
+				if(typeof v==='string'){
+					v = v.trim();
+					if(v.length>10 && v.substring(v.length-10)==="!important") v = [ v.substring(0,v.length-10).trimEnd(), true ];
+					else v = [ v, false ];
+				}
+				else v = this.#attrStyleClearProp;
+				stylesObj[k] = v;
+			}
+			// Remove old properties that no longer exist in object
+			let oldProps = computeState.currentProps;
+			let newProps = computeState.currentProps = Object.keys(stylesObj);
+			for(let i=0,l=oldProps.length; i<l; i++){
+				let k = oldProps[i];
+				if(newProps.indexOf(k)===-1) stylesObj[k] = this.#attrStyleClearProp;
+			}
+			return stylesObj;
+		}
+	}
+	
+	/**
+	 * Render the computed styles onto the element.
+	 * 
+	 * Applies styles via `element.setAttribute('style', ...)` for string results,
+	 * or `element.style.setProperty()`/`removeProperty()` for object results.
+	 * A no-op if the abort flag is set (element disconnected mid-render).
+	 * 
+	 * @private
+	 * @param {HTMLElement} element The target element
+	 * @param {string|object} newStyles The computed style string or property-value object
+	 */
+	#attrStyle_render(element,newStyles){
+		if(element[this.#attrStyleAbortSymbol].abort) return;
+		if(typeof newStyles==='string'){
+			element.setAttribute('style',newStyles??'');
+		}
+		else if(newStyles===Object(newStyles)){
+			for(let [k,[v,i]] of Object.entries(newStyles)){
+				if(typeof v==='string' && v.length>0) element.style.setProperty(k,v,i?'important':void 0);
+				else element.style.removeProperty(k);
+			}
+		}
+	}
+	
+	#attrStyle_filterArray(k){ return typeof k==='string' && k.length>0; }
 	
 	/**
 	 * $signal-name:watch or $signal-name:compute attribute handler.
