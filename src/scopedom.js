@@ -336,6 +336,59 @@ class ScopeDom {
 		return true;
 	}
 	
+	/** @type {scopeBase} Scope base/object */
+	scope = null;
+	/** @type {initOptionsDefaults} Configuration options for this instance */
+	options = null;
+	/** @type {HTMLElement|null} The main element being watched */
+	mainElement = null;
+	/** @type {scopeController} The scope controller instance */
+	scopeCtrl = null;
+	/** @type {eventRegistry} Event Registry */
+	eventRegistry = null;
+	/** @type {Map} Named controllers map */
+	namedControllers = null;
+	/** @type {Map} Cache for DOM watchers */
+	cacheWatchObservers = null;
+	/** @type {WeakSet} Cache for connected nodes */
+	cacheConnectedNodes = null;
+	/** @type {Set} Pending connection nodes */
+	pendingConnectNodes = null;
+	/** @type {Map} Pending element loaded callbacks */
+	pendingOnElementLoaded = null;
+	/** @type {WeakMap} Cache for element scope controllers */
+	cacheElementScopeCtrls = null;
+	/** @type {WeakMap} Cache for element attributes */
+	cacheElementAttribs = null;
+	/** @type {WeakMap} Cache for element attribute defaults */
+	cacheElementAttribsDefaults = null;
+	/** @type {WeakSet} Nodes to ignore */
+	ignoreNodes = null;
+	/** @type {WeakMap} Element-related event listeners */
+	elementRelatedEventListeners = null;
+	/** @type {WeakMap} Element extra scopes: element -> array -> objects/elements */
+	elementExtraScopes = null;
+	/** @type {WeakMap} Element isolated scopes */
+	elementIsolatedScopes = null;
+	/** @type {WeakMap} Alias element -> Source / Original element, for cache keys */
+	elementSources = null;
+	/** @type {Set} Ready callbacks listeners */
+	onReadyListeners = null;
+	/** @type {Set} DOM ready callbacks listeners */
+	onDOMReadyListeners = null;
+	/** @type {boolean} Flag indicating if currently executing onReady callbacks */
+	isDuringOnReady = false;
+	/** @type {MutationObserver|null} DOM observer for main element */
+	domWaitForMain = null;
+	/** @type {MutationObserver|null} DOM observer for DOM tree */
+	domObserver = null;
+	/** @type {builtinAttributes|null} Built-in attributes handler */
+	builtinAttribs = null;
+	/** @type {object} Plugin system object */
+	plugins = null;
+	/** @type {boolean} */
+	dev = initOptionsDefaults.dev;
+	
 	/**
 	 * Initialise a new ScopeDom instance
 	 * 
@@ -356,58 +409,33 @@ class ScopeDom {
 		allInstances.add(this);
 		// Create Scope for scopeController
 		this.scope = options.scope===Object(options.scope) ? options.scope : new scopeBase();
-		/** @type {initOptionsDefaults} Configuration options for this instance */
 		this.options = options;
-		/** @type {HTMLElement|null} The main element being watched */
 		this.mainElement = options.element || null;
-		/** @type {scopeController} The scope controller instance */
 		this.scopeCtrl = new scopeController(this.scope,null,null,false,this);
-		/** @type {eventRegistry} Event Registry */
 		this.eventRegistry = this.scopeCtrl.eventRegistry;
-		/** @type {Map} Named controllers map */
 		this.namedControllers = new Map();
-		/** @type {Map} Cache for DOM watchers */
 		this.cacheWatchObservers = new Map();
-		/** @type {WeakSet} Cache for connected nodes */
 		this.cacheConnectedNodes = new WeakSet();
-		/** @type {Set} Pending connection nodes */
 		this.pendingConnectNodes = new Set();
-		/** @type {Map} Pending element loaded callbacks */
 		this.pendingOnElementLoaded = new Map();
-		/** @type {WeakMap} Cache for element scope controllers */
 		this.cacheElementScopeCtrls = new WeakMap();
-		/** @type {WeakMap} Cache for element attributes */
 		this.cacheElementAttribs = new WeakMap();
-		/** @type {WeakMap} Cache for element attribute defaults */
 		this.cacheElementAttribsDefaults = new WeakMap();
-		/** @type {WeakSet} Nodes to ignore */
 		this.ignoreNodes = new WeakSet();
-		/** @type {WeakMap} Element-related event listeners */
 		this.elementRelatedEventListeners = new WeakMap();
-		/** @type {WeakMap} Element extra scopes */
 		this.elementExtraScopes = new WeakMap(); // element -> array -> objects/elements
-		/** @type {WeakMap} Element isolated scopes */
 		this.elementIsolatedScopes = new WeakSet();
-		/** @type {WeakMap} Alias element -> Source / Original element, for cache keys */
 		this.elementSources = new WeakSet();
-		/** @type {Set} Ready callbacks listeners */
 		this.onReadyListeners = new Set();
-		/** @type {Set} DOM ready callbacks listeners */
 		this.onDOMReadyListeners = new Set();
-		/** @type {boolean} Flag indicating if currently executing onReady callbacks */
 		this.isDuringOnReady = false;
-		/** @type {MutationObserver|null} DOM observer for main element */
 		this.domWaitForMain = null;
-		/** @type {MutationObserver|null} DOM observer for DOM tree */
 		this.domObserver = null;
-		/** @type {builtinAttributes|null} Built-in attributes handler */
 		this.builtinAttribs = new builtinAttributes(this);
-		/** @type {boolean} */
 		this.dev = !!this.options.dev;
 		// Dev notice
 		DEV: { if(this.dev && !options.signalProxyAll) console.warn("ScopeDom: signalProxyAll is `false`, signal reactivity will be disabled for most expressions"); }
 		// Plugins
-		/** @type {object} Plugin system object */
 		this.plugins = { init:false, register:new Set(), onConnect:new Set(), onDisconnect:new Set(), onPluginAdd:new Set(), onExpression:new Set() };
 		try{ this.initPlugins(); }catch(err){ console.error("ScopeDom: error during initPlugins:",err); }
 		if(mainInstance===this){
@@ -1446,6 +1474,16 @@ class ScopeDom {
  * @class pluginOnElementPlug
  */
 class pluginOnElementPlug {
+	
+	/** @type {ScopeDom} The ScopeDom instance */
+	instance = null;
+	/** @type {HTMLElement} The DOM element */
+	element = null;
+	/** @type {scopeElementController} The scopeElementController for the element */
+	elementScopeCtrl = null;
+	/** @type {Map<string,scopeElementAttribDefaults>} ScopeDom attributes object */
+	attribs = null;
+	
 	/**
 	 * @constructor
 	 * @param {ScopeDom} instance The ScopeDom instance
@@ -1454,15 +1492,12 @@ class pluginOnElementPlug {
 	 * @param {Map<string,scopeElementAttribDefaults>} attribs ScopeDom attributes object
 	 */
 	constructor(instance,element,elementScopeCtrl,attribs){
-		/** @type {ScopeDom} The ScopeDom instance */
 		this.instance = instance;
-		/** @type {HTMLElement} The DOM element */
 		this.element = element;
-		/** @type {scopeElementController} The scopeElementController for the element */
 		this.elementScopeCtrl = elementScopeCtrl;
-		/** @type {Map<string,scopeElementAttribDefaults>} ScopeDom attributes object */
 		this.attribs = attribs;
 	}
+	
 }
 
 /**
@@ -1474,6 +1509,16 @@ class pluginOnElementPlug {
  * @class pluginOnElementExpression
  */
 class pluginOnElementExpression {
+	
+	/** @type {ScopeDom} The ScopeDom instance */
+	instance = null;
+	/** @type {HTMLElement} The DOM element */
+	element = null;
+	/** @type {scopeElementController} The scopeElementController for the element */
+	elementScopeCtrl = null;
+	/** @type {object} The ScopeDom expression object { expression, mainScopes, otherScopes, options } */
+	expressionObj = null;
+	
 	/**
 	 * @constructor
 	 * @param {ScopeDom} instance The ScopeDom instance
@@ -1486,15 +1531,12 @@ class pluginOnElementExpression {
 	 * @param {execExp.execExpOptions|object|null} expObj.options Execution options
 	 */
 	constructor(instance,element,elementScopeCtrl,expObj){
-		/** @type {ScopeDom} The ScopeDom instance */
 		this.instance = instance;
-		/** @type {HTMLElement} The DOM element */
 		this.element = element;
-		/** @type {scopeElementController} The scopeElementController for the element */
 		this.elementScopeCtrl = elementScopeCtrl;
-		/** @type {object} The ScopeDom expression object { expression, mainScopes, otherScopes, options } */
 		this.expressionObj = expObj;
 	}
+	
 }
 
 /**

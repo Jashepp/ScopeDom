@@ -43,6 +43,8 @@ import ScopeDom from "../scopedom.js";
  */
 export class builtinAttributes {
 	
+	instance = null;
+	
 	/**
 	 * Built-in attributes handler constructor.
 	 *

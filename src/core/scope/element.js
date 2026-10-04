@@ -42,6 +42,8 @@ const seSymb = Symbol('$scopeElementContext');
  */
 export class scopeElementContext {
 	
+	[seSymb] = null;
+	
 	/**
 	 * @constructor
 	 * @param {scopeElementController} eScopeCtrl
@@ -178,6 +180,18 @@ export class scopeElementContext {
  */
 export class scopeElementController {
 	
+	/** @type {HTMLElement} */
+	element = null;
+	/** @type {scopeController} */
+	ctrl = null;
+	/** @type {scopeInstance} */
+	scope = null;
+	/** @type {eventRegistry} */
+	eventRegistry = null;
+	/** @type {scopeElementContext} */
+	execContext = null;
+	isDuringUpdateDom = false;
+	
 	/**
 	 * @constructor
 	 * @param {HTMLElement} element The element the scopeElementController is bound to
@@ -187,15 +201,10 @@ export class scopeElementController {
 	constructor(element,scopeObj=void 0,scopeCtrl=void 0){
 		if(!element) throw new Error("Missing element?");
 		if(scopeCtrl instanceof scopeElementController) scopeCtrl = scopeCtrl.ctrl;
-		/** @type {HTMLElement} */
 		this.element = element;
-		/** @type {scopeController} */
 		this.ctrl = !scopeObj && scopeCtrl ? scopeCtrl : new scopeController(scopeObj,scopeCtrl?.eventTarget,scopeCtrl);
-		/** @type {scopeInstance} */
 		this.scope = this.ctrl.scope;
-		/** @type {eventRegistry} */
 		this.eventRegistry = this.ctrl.eventRegistry;
-		/** @type {scopeElementContext} */
 		this.execContext = new scopeElementContext(this);
 		this.isDuringUpdateDom = false;
 	}

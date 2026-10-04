@@ -51,6 +51,13 @@ import { signalProxy, resolveSignal } from "./proxy.js";
  */
 export class signalObserver {
 	
+	ctrl = null;
+	signals = null;
+	signalsIgnore = null;
+	listeners = null;
+	isRecording = false;
+	isChanging = false;
+	
 	#changes;
 	#changesBySignal;
 	

@@ -57,6 +57,8 @@ import { signalProxy, resolveSignal } from "./proxy.js";
  */
 export class signalController {
 	
+	scopeCtrl = null;
+	
 	/** @type {boolean} Internal flag to prevent observer update triggers during sensitive operations */
 	#preventUpdates = false;
 	

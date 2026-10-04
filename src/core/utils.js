@@ -96,6 +96,8 @@ export function setAttribute(target,name,value){
  */
 export class eventRegistry {
 	
+	map = null;
+	
 	constructor(){
 		this.map = new Map();
 	}

@@ -129,6 +129,9 @@ const scSymb = Symbol('$scopeControllerContext');
  * @class scopeControllerContext
  */
 export class scopeControllerContext {
+	
+	[scSymb] = null;
+	
 	/**
 	 * @constructor
 	 * @param {scopeController} scopeCtrl The scopeController instance
@@ -303,6 +306,21 @@ export class scopeControllerContext {
  */
 export class scopeController {
 	
+	ScopeDomInstance = null;
+	eventRegistry = null;
+	eventTarget = null;
+	verbose = false;
+	topCtrl = null;
+	parentCtrl = null;
+	isolated = false;
+	/** @type {scopeInstance} */
+	scope = null;
+	/** @type {scopeControllerContext} */
+	execContext = null;
+	isDuringUpdate = false;
+	/** @type {signalController} */
+	signalCtrl = null;
+	
 	/**
 	 * @constructor
 	 * @param {scopeBase|object|null} [scopeObj=new scopeBase()] Scope base object
@@ -320,13 +338,10 @@ export class scopeController {
 		this.verbose = false;
 		this.topCtrl = parentCtrl?.topCtrl || parentCtrl || null;
 		this.parentCtrl = parentCtrl || null;
-		this.isolated = isolated;
-		/** @type {scopeInstance} */
+		this.isolated = !!isolated;
 		this.scope = new scopeInstance(scopeObj,this);
-		/** @type {scopeControllerContext} */
 		this.execContext = new scopeControllerContext(this);
 		this.isDuringUpdate = false;
-		/** @type {signalController} */
 		this.signalCtrl = this.ScopeDomInstance?.scopeCtrl?.signalCtrl || parentCtrl?.signalCtrl || new signalController(this);
 	}
 	
